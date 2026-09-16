@@ -213,9 +213,9 @@
         <div class="block"><h4>θᵥ potencial virtual (K)</h4><div class="chart-h"><canvas id="chartTheta"></canvas></div></div>
         <div class="block"><h4>Humitat relativa (%)</h4><div class="chart-h"><canvas id="chartRh"></canvas></div></div>
         <div class="block">
-          <h4>Vent — velocitat (m/s)</h4>
+          <h4>Vent — velocitat i direcció</h4>
           <div class="chart-h"><canvas id="chartWind"></canvas></div>
-          <div class="wind-note" id="windNote">activa una única sonda per veure les fletxes de direcció</div>
+          <div class="wind-note" id="windNote">fletxes a la dreta = direcció (cap on bufa); color = sonda</div>
         </div>
         <div class="block"><h4>Velocitat d'ascens (m/s)</h4><div class="chart-h"><canvas id="chartRise"></canvas></div></div>
       </div>
@@ -282,7 +282,7 @@
 const OWNER = "PauGuarqueC";
 const REPO = "sonda-viewer";
 const BRANCH = "main";
-const WORKER_URL = "https://sonda-upload-proxy.YOUR-SUBDOMAIN.workers.dev";
+const WORKER_URL = "https://sonda-upload-proxy.pguarque.workers.dev";
 
 // ============================================================
 // Router (navegacio per hash, sense recarregar la pagina)
@@ -591,24 +591,24 @@ function makeMultiChart(canvasId, field, xLabel, opts){
 function makeWindChart(){
   const maxH = maxHeightAll();
   const sondes = activeSondes();
+  const dMax = dataMaxFor('wind_speed_ms');
+  const xMax = Math.max(15, Math.ceil(dMax / 5) * 5);
+  const arrowX = xMax * 0.93;
+  const step = 120;
+
   const datasets = sondes.map(({s, color, dash}) => ({
     type: 'line', label: s.sond_id,
     data: s.profile.filter(p=>p.wind_speed_ms!=null).map(p=>({x:p.wind_speed_ms, y:p.height_agl_m})),
     borderColor: color, backgroundColor:'transparent', borderWidth:2, borderDash: dash, pointRadius:0, tension:0.15, parsing:false
   }));
 
-  document.getElementById('windNote').textContent =
-    "les fletxes indiquen cap on bufa el vent (mostreig cada ~400 m); color = sonda";
-
-  // Fletxes de direccio per a CADA sonda activa (no nomes quan n'hi ha una),
-  // acolorides igual que la seva linia perque es puguin distingir.
   sondes.forEach(({s, color}) => {
     const arrowPts = [];
     let lastH = -Infinity;
     for(const p of s.profile){
-      if(p.wind_speed_ms==null || p.wind_dir_deg==null) continue;
-      if(p.height_agl_m - lastH >= 400){
-        arrowPts.push({x:p.wind_speed_ms, y:p.height_agl_m, rot:(p.wind_dir_deg+180)%360});
+      if(p.wind_dir_deg==null) continue;
+      if(p.height_agl_m - lastH >= step){
+        arrowPts.push({x: arrowX, y: p.height_agl_m, rot: (p.wind_dir_deg + 180) % 360});
         lastH = p.height_agl_m;
       }
     }
@@ -618,9 +618,6 @@ function makeWindChart(){
       backgroundColor: color, borderColor:'#ffffff', borderWidth:1
     });
   });
-
-  const dMax = dataMaxFor('wind_speed_ms');
-  const xMax = Math.max(15, Math.ceil(dMax / 5) * 5);
 
   const ctx = document.getElementById('chartWind').getContext('2d');
   return new Chart(ctx, {
