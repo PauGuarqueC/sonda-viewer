@@ -502,8 +502,16 @@ async function openIncendi(slug){
 }
 
 function maxHeightAll(){
-  const peaks = INCENDI.sondes.map(s => s.peak_agl_m || 0);
-  return Math.ceil(Math.max(...peaks, 1000) / 500) * 500;
+  let max = 0;
+  activeSondes().forEach(({s}) => s.profile.forEach(p => { if(p.alt_msl_m > max) max = p.alt_msl_m; }));
+  return Math.ceil(Math.max(max, 1000) / 500) * 500;
+}
+
+function minHeightAll(){
+  let min = Infinity;
+  activeSondes().forEach(({s}) => s.profile.forEach(p => { if(p.alt_msl_m < min) min = p.alt_msl_m; }));
+  if(!isFinite(min)) min = 0;
+  return Math.floor(min / 100) * 100;
 }
 
 function buildSidebar(){
@@ -558,7 +566,7 @@ function makeMultiChart(canvasId, field, xLabel, opts){
   const maxH = maxHeightAll();
   const datasets = activeSondes().map(({s, color, dash}) => ({
     label: s.sond_id,
-    data: s.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.height_agl_m})),
+    data: s.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.alt_msl_m})),
     borderColor: color, backgroundColor: 'transparent',
     borderWidth: 2, borderDash: dash, pointRadius: 0, tension: 0.15, parsing: false
   }));
@@ -580,7 +588,7 @@ function makeMultiChart(canvasId, field, xLabel, opts){
       responsive:true, maintainAspectRatio:false,
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y: { type:'linear', min:0, max:maxH, title:{display: canvasId==='chartTheta', text:'Alçada AGL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
+        y: { type:'linear', min:minHeightAll(), max:maxH, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins: { legend: { display:false } }
     }
@@ -646,7 +654,7 @@ const windBarbsPlugin = {
         let nearest = null, nearestDist = Infinity;
         for(const p of s.profile){
           if(p.wind_dir_deg == null || p.wind_speed_ms == null) continue;
-          const d = Math.abs(p.height_agl_m - hVal);
+          const d = Math.abs(p.alt_msl_m - hVal);
           if(d < nearestDist){ nearestDist = d; nearest = p; }
         }
         if(nearest && nearestDist <= tol){
@@ -666,7 +674,7 @@ function makeWindChart(){
 
   const datasets = sondes.map(({s, color, dash}) => ({
     type: 'line', label: s.sond_id,
-    data: s.profile.filter(p=>p.wind_speed_ms!=null).map(p=>({x:p.wind_speed_ms, y:p.height_agl_m})),
+    data: s.profile.filter(p=>p.wind_speed_ms!=null).map(p=>({x:p.wind_speed_ms, y:p.alt_msl_m})),
     borderColor: color, backgroundColor:'transparent', borderWidth:2, borderDash: dash, pointRadius:0, tension:0.15, parsing:false
   }));
 
@@ -677,10 +685,10 @@ function makeWindChart(){
     plugins: [windBarbsPlugin],
     options:{
       responsive:true, maintainAspectRatio:false,
-      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 16 },
+      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 10 },
       scales:{
         x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y:{ type:'linear', min:0, max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
+        y:{ type:'linear', min:minHeightAll(), max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
       },
       plugins:{ legend:{ display:false } }
     }
