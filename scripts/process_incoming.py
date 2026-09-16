@@ -17,12 +17,13 @@ import json
 import os
 import re
 import sys
+import tempfile
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
 from merge_sonda import build_sonda_json
-from crypto_utils import encrypt_str, decrypt_str
+from crypto_utils import encrypt_str, decrypt_str, decrypt_bytes
 
 ROOT = Path(__file__).resolve().parent.parent
 INCOMING = ROOT / "incoming"
@@ -109,6 +110,7 @@ def update_index(slug, incendi_nom, incendi_data):
     index.sort(key=lambda it: it["actualitzat"], reverse=True)
     write_encrypted_json(INDEX_PATH, index)
 
+
 def backfill_index_locations():
     """Omple lat/lon a l'index per a incendis processats abans que
     guardessim la ubicacio (no cal cap sonda nova per activar-ho)."""
@@ -129,6 +131,7 @@ def backfill_index_locations():
         write_encrypted_json(INDEX_PATH, index)
         print("[ok] ubicacions retroactivament omplertes a l'index")
 
+
 def main():
     _require_key()
 
@@ -136,28 +139,48 @@ def main():
         print("Cap carpeta incoming/, res a fer.")
         return
 
-    processed = 0
-    for zip_path in sorted(INCOMING.glob("*/*.zip")):
-        slug = zip_path.parent.name
-        sond_id = zip_path.stem
-        meta_path = zip_path.with_name(sond_id + ".meta.json")
+    all_enc = sorted(INCOMING.glob("*/*.zip.enc"))
+    print(f"[debug] fitxers .zip.enc trobats ({len(all_enc)}):")
+    for p in all_enc:
+        print(f"[debug]   {p}")
 
-        if not meta_path.exists():
-            print(f"[avis] {zip_path} no te fitxer .meta.json parell, l'ignoro")
+    processed = 0
+    for zip_enc_path in all_enc:
+        slug = zip_enc_path.parent.name
+        sond_id = zip_enc_path.name[: -len(".zip.enc")]
+        meta_enc_path = zip_enc_path.with_name(sond_id + ".meta.json.enc")
+
+        if not meta_enc_path.exists():
+            print(f"[avis] {zip_enc_path} no te fitxer .meta.json.enc parell, l'ignoro (buscava {meta_enc_path})")
             continue
 
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        incendi_nom = meta.get("incendi", slug)
-        tipus = meta.get("tipus")
-
         if already_processed(slug, sond_id):
+            print(f"[debug] {sond_id} ja processat anteriorment, l'ignoro")
             continue
 
         try:
-            sonda_data = build_sonda_json(zip_path, incendi=incendi_nom, tipus=tipus)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[error] no s'ha pogut processar {zip_path}: {exc}")
+            zip_bytes = decrypt_bytes(
+                zip_enc_path.read_text(encoding="utf-8"), DATA_ENCRYPT_KEY
+            )
+            meta = json.loads(
+                decrypt_str(meta_enc_path.read_text(encoding="utf-8"), DATA_ENCRYPT_KEY)
+            )
+        except ValueError as exc:
+            print(f"[error] no s'ha pogut desxifrar {zip_enc_path}: {exc}")
             continue
+
+        incendi_nom = meta.get("incendi", slug)
+        tipus = meta.get("tipus")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_zip_path = Path(tmp_dir) / f"{sond_id}.zip"
+            tmp_zip_path.write_bytes(zip_bytes)
+
+            try:
+                sonda_data = build_sonda_json(tmp_zip_path, incendi=incendi_nom, tipus=tipus)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[error] no s'ha pogut processar {zip_enc_path}: {exc}")
+                continue
 
         incendi_data = update_incendi(slug, incendi_nom, sonda_data)
         update_index(slug, incendi_nom, incendi_data)
@@ -165,6 +188,7 @@ def main():
         print(f"[ok] {incendi_nom} / {sond_id} ({tipus}) processat i xifrat")
 
     backfill_index_locations()
+
     print(f"Total processades: {processed}")
 
 
