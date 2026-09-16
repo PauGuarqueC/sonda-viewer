@@ -48,7 +48,16 @@ def read_encrypted_json(path, default):
     if not path.exists():
         return default
     ciphertext = path.read_text(encoding="utf-8")
-    plaintext = decrypt_str(ciphertext, DATA_ENCRYPT_KEY)
+    try:
+        plaintext = decrypt_str(ciphertext, DATA_ENCRYPT_KEY)
+    except ValueError as exc:
+        raise SystemExit(
+            f"[error] no s'ha pogut desxifrar {path}: {exc}\n"
+            f"Molt probablement DATA_ENCRYPT_KEY ha canviat des que es va "
+            f"escriure aquest fitxer (o és el fitxer de mostra amb la clau "
+            f"de demo). Esborra {path} del repo (i el seu index si escau) "
+            f"i torna a executar — es crearà de nou amb la clau actual."
+        )
     return json.loads(plaintext)
 
 
