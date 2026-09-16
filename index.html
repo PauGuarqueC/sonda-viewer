@@ -588,7 +588,7 @@ function makeMultiChart(canvasId, field, xLabel, opts){
       responsive:true, maintainAspectRatio:false,
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y: { type:'linear', min:minHeightAll(), max:maxH, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
+        y: { type:'linear', min:0, max:maxH, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins: { legend: { display:false } }
     }
@@ -688,7 +688,7 @@ function makeWindChart(){
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 10 },
       scales:{
         x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y:{ type:'linear', min:minHeightAll(), max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
+        y:{ type:'linear', min:0, max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
       },
       plugins:{ legend:{ display:false } }
     }
