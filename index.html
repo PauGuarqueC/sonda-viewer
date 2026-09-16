@@ -703,7 +703,13 @@ let driftMap = null;
 
 function altColor(alt, maxAlt){
   const t = Math.max(0, Math.min(1, alt / (maxAlt || 1)));
-  const stops = [[0.00,[47,111,168]],[0.5,[184,134,11]],[1.00,[200,16,46]]];
+  const stops = [
+    [0.00,[13,71,161]],
+    [0.25,[3,169,244]],
+    [0.50,[76,175,80]],
+    [0.75,[255,193,7]],
+    [1.00,[211,47,47]]
+  ];
   for(let i=0;i<stops.length-1;i++){
     const [t0,c0]=stops[i], [t1,c1]=stops[i+1];
     if(t>=t0 && t<=t1){
@@ -743,11 +749,18 @@ function renderDrift(){
     const track = s.flight_path_3d;
     if(!track || !track.length) return;
 
+    let peakIdx = 0;
+    for(let i=1;i<track.length;i++){ if(track[i][2] > track[peakIdx][2]) peakIdx = i; }
+
     for(let i=1;i<track.length;i++){
       const [lon0,lat0,alt0] = track[i-1];
       const [lon1,lat1,alt1] = track[i];
+      const isDescent = i > peakIdx;
       L.polyline([[lat0,lon0],[lat1,lon1]], {
-        color: altColor(alt1, maxAlt), weight: 3, opacity: 0.9
+        color: altColor(alt1, maxAlt),
+        weight: isDescent ? 2.5 : 3.5,
+        opacity: isDescent ? 0.55 : 0.95,
+        dashArray: isDescent ? '6,5' : null
       }).addTo(driftMap);
     }
 
