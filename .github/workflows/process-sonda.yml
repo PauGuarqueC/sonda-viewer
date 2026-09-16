@@ -1,0 +1,47 @@
+name: Processa sondes pujades
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "incoming/**"
+
+concurrency:
+  group: process-sonda
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instal·la dependències
+        run: pip install pycryptodome
+
+      - name: Processa els llançaments nous
+        env:
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+        run: python scripts/process_incoming.py
+
+      - name: Publica els canvis (si n'hi ha)
+        run: |
+          git config user.name "sonda-bot"
+          git config user.email "sonda-bot@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Cap dada nova a publicar."
+          else
+            git commit -m "Actualitza dades de sondes"
+            git pull --rebase origin main
+            git push
+          fi
