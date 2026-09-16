@@ -205,6 +205,7 @@ def build_sonda_json(zip_path, incendi=None, tipus=None):
     for point in profile:
         h = point["height_agl_m"]
         point["rise_speed_ms"] = interp_at_height(ascent, h, "rise_speed_ms")
+        point["alt_msl_m"] = interp_at_height(ascent, h, "alt_msl_m")
         point["lat"] = interp_at_height(ascent, h, "lat")
         point["lon"] = interp_at_height(ascent, h, "lon")
         point["theta_v_k"] = virtual_potential_temp(
