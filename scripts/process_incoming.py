@@ -109,6 +109,25 @@ def update_index(slug, incendi_nom, incendi_data):
     index.sort(key=lambda it: it["actualitzat"], reverse=True)
     write_encrypted_json(INDEX_PATH, index)
 
+def backfill_index_locations():
+    """Omple lat/lon a l'index per a incendis processats abans que
+    guardessim la ubicacio (no cal cap sonda nova per activar-ho)."""
+    index = read_encrypted_json(INDEX_PATH, [])
+    changed = False
+    for entry in index:
+        if entry.get("lat") is not None:
+            continue
+        incendi_path = DATA_DIR / f"{entry['slug']}.json.enc"
+        incendi_data = read_encrypted_json(incendi_path, None)
+        if not incendi_data:
+            continue
+        coords = _avg_launch_coords(incendi_data)
+        if coords:
+            entry["lat"], entry["lon"] = coords
+            changed = True
+    if changed:
+        write_encrypted_json(INDEX_PATH, index)
+        print("[ok] ubicacions retroactivament omplertes a l'index")
 
 def main():
     _require_key()
@@ -145,6 +164,7 @@ def main():
         processed += 1
         print(f"[ok] {incendi_nom} / {sond_id} ({tipus}) processat i xifrat")
 
+    backfill_index_locations()
     print(f"Total processades: {processed}")
 
 
