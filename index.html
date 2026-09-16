@@ -215,7 +215,7 @@
         <div class="block">
           <h4>Vent — velocitat i direcció</h4>
           <div class="chart-h"><canvas id="chartWind"></canvas></div>
-          <div class="wind-note" id="windNote">fletxes a la dreta = direcció (cap on bufa); color = sonda</div>
+            <div class="wind-note" id="windNote">barbes a la dreta: cada ploma=10kt, mitja=5kt, bandera=50kt; color=sonda</div>
         </div>
         <div class="block"><h4>Velocitat d'ascens (m/s)</h4><div class="chart-h"><canvas id="chartRise"></canvas></div></div>
       </div>
@@ -225,8 +225,8 @@
           <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;">Deriva horitzontal — color = alçada</h3>
           <div id="driftBox" style="height:420px; border-radius:4px; overflow:hidden;"></div>
           <div class="legend" id="driftLegend" style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:8px;">
-            <span>0 m</span><div style="width:120px;height:8px;border-radius:2px;background:linear-gradient(90deg, #2f6fa8, #b8860b, #C8102E);"></div><span id="driftLegendMax">— m</span>
-            <span style="margin-left:4px;">(alçada MSL del track)</span>
+            <span>0 m</span><div style="width:140px;height:8px;border-radius:2px;background:linear-gradient(90deg, #0d47a1, #03a9f4, #4caf50, #ffc107, #d32f2f);"></div><span id="driftLegendMax">— m</span>
+            <span style="margin-left:10px;">(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span></span>
           </div>
         </div>
         <div class="block">
@@ -588,13 +588,82 @@ function makeMultiChart(canvasId, field, xLabel, opts){
   });
 }
 
+function drawWindBarb(ctx, x, y, speedMs, dirDeg, color){
+  const speedKt = Math.round((speedMs * 1.94384) / 5) * 5; // arrodonit a 5 nusos
+  const shaftLen = 26, barbLen = 8, spacing = 4.5;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(dirDeg * Math.PI / 180); // 0=N amunt, sentit horari (conveni de rumb)
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+
+  if(speedKt < 3){
+    ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-shaftLen); ctx.stroke();
+
+  let remaining = speedKt, pos = -shaftLen;
+  const pennants = Math.floor(remaining/50); remaining -= pennants*50;
+  const fullBarbs = Math.floor(remaining/10); remaining -= fullBarbs*10;
+  const halfBarb = remaining >= 5;
+
+  for(let i=0;i<pennants;i++){
+    ctx.beginPath();
+    ctx.moveTo(0,pos); ctx.lineTo(barbLen,pos+spacing*1.3); ctx.lineTo(0,pos+spacing*2.4);
+    ctx.closePath(); ctx.fill();
+    pos += spacing*2.4 + 1.5;
+  }
+  for(let i=0;i<fullBarbs;i++){
+    ctx.beginPath(); ctx.moveTo(0,pos); ctx.lineTo(barbLen,pos-spacing*0.9); ctx.stroke();
+    pos += spacing;
+  }
+  if(halfBarb){
+    ctx.beginPath(); ctx.moveTo(0,pos); ctx.lineTo(barbLen*0.55,pos-spacing*0.45); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+const windBarbsPlugin = {
+  id: 'windBarbsPlugin',
+  afterDatasetsDraw(chart){
+    const opts = chart.config.options.windBarbs;
+    if(!opts) return;
+    const { sondes, arrowXValue, pxSpacing } = opts;
+    const xScale = chart.scales.x, yScale = chart.scales.y;
+    const xPixCenter = xScale.getPixelForValue(arrowXValue);
+    const yTop = yScale.getPixelForValue(yScale.max);
+    const yBottom = yScale.getPixelForValue(yScale.min);
+    const n = sondes.length;
+    const tol = Math.abs(yScale.getValueForPixel(yTop) - yScale.getValueForPixel(yTop + pxSpacing)) * 0.5;
+
+    sondes.forEach(({s, color}, idx) => {
+      const xOff = n > 1 ? (idx - (n-1)/2) * 16 : 0;
+      for(let yPix = yTop; yPix <= yBottom; yPix += pxSpacing){
+        const hVal = yScale.getValueForPixel(yPix);
+        let nearest = null, nearestDist = Infinity;
+        for(const p of s.profile){
+          if(p.wind_dir_deg == null || p.wind_speed_ms == null) continue;
+          const d = Math.abs(p.height_agl_m - hVal);
+          if(d < nearestDist){ nearestDist = d; nearest = p; }
+        }
+        if(nearest && nearestDist <= tol){
+          drawWindBarb(chart.ctx, xPixCenter + xOff, yPix, nearest.wind_speed_ms, (nearest.wind_dir_deg + 180) % 360, color);
+        }
+      }
+    });
+  }
+};
+
 function makeWindChart(){
   const maxH = maxHeightAll();
   const sondes = activeSondes();
   const dMax = dataMaxFor('wind_speed_ms');
   const xMax = Math.max(15, Math.ceil(dMax / 5) * 5);
-  const arrowX = xMax * 0.93;
-  const step = 120;
+  const arrowX = xMax * 0.88;
 
   const datasets = sondes.map(({s, color, dash}) => ({
     type: 'line', label: s.sond_id,
@@ -602,22 +671,22 @@ function makeWindChart(){
     borderColor: color, backgroundColor:'transparent', borderWidth:2, borderDash: dash, pointRadius:0, tension:0.15, parsing:false
   }));
 
-  sondes.forEach(({s, color}) => {
-    const arrowPts = [];
-    let lastH = -Infinity;
-    for(const p of s.profile){
-      if(p.wind_dir_deg==null) continue;
-      if(p.height_agl_m - lastH >= step){
-        arrowPts.push({x: arrowX, y: p.height_agl_m, rot: (p.wind_dir_deg + 180) % 360});
-        lastH = p.height_agl_m;
-      }
+  const ctx = document.getElementById('chartWind').getContext('2d');
+  return new Chart(ctx, {
+    type:'line',
+    data:{ datasets },
+    plugins: [windBarbsPlugin],
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 34 },
+      scales:{
+        x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
+        y:{ type:'linear', min:0, max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
+      },
+      plugins:{ legend:{ display:false } }
     }
-    datasets.push({
-      type:'scatter', label:'direcció ' + s.sond_id, data: arrowPts, parsing:false,
-      pointStyle:'triangle', pointRadius:6, pointRotation: arrowPts.map(p=>p.rot),
-      backgroundColor: color, borderColor:'#ffffff', borderWidth:1
-    });
   });
+}
 
   const ctx = document.getElementById('chartWind').getContext('2d');
   return new Chart(ctx, {
