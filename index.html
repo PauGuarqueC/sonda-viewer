@@ -266,7 +266,7 @@
 const OWNER = "PauGuarqueC";
 const REPO = "sonda-viewer";
 const BRANCH = "main";
-const WORKER_URL = "https://sonda-upload-proxy.pguarque.workers.dev";
+const WORKER_URL = "https://sonda-upload-proxy.YOUR-SUBDOMAIN.workers.dev";
 
 // ============================================================
 // Router (navegacio per hash, sense recarregar la pagina)
@@ -326,6 +326,16 @@ function hideGate(){
   document.getElementById('gate').classList.remove('active');
 }
 
+async function fetchEncrypted(path){
+  try{
+    const res = await fetch(path);
+    if(!res.ok) return { exists:false };
+    return { exists:true, ciphertext: await res.text() };
+  } catch(e){
+    return { exists:false };
+  }
+}
+
 async function withViewKey(loaderFn){
   // loaderFn(passphrase) -> retorna les dades desxifrades, o null si la clau es incorrecta
   const stored = localStorage.getItem(VIEW_KEY_STORAGE);
@@ -338,6 +348,7 @@ async function withViewKey(loaderFn){
     showGate(async (pw) => {
       const data = await loaderFn(pw);
       if(data === null){
+        document.getElementById('gateErr').textContent = 'Contrasenya incorrecta.';
         document.getElementById('gateErr').style.display = 'block';
         return;
       }
@@ -359,14 +370,16 @@ document.getElementById('gateInput').addEventListener('keydown', (e) => {
 // VISTA: llista d'incendis
 // ============================================================
 async function openList(){
-  const items = await withViewKey(async (pw) => {
-    try{
-      const res = await fetch('data/incendis_index.json.enc');
-      if(!res.ok) return null;
-      const ciphertext = await res.text();
-      return tryDecrypt(ciphertext, pw);
-    } catch(e){ return null; }
-  });
+  const fetched = await fetchEncrypted('data/incendis_index.json.enc');
+  if(!fetched.exists){
+    // Encara no hi ha cap dada al repo (la Action no ha corregut amb èxit
+    // encara, o s'ha esborrat el fitxer i no s'ha regenerat). No té sentit
+    // demanar contrasenya per a un fitxer que no existeix.
+    hideGate();
+    renderList([]);
+    return;
+  }
+  const items = await withViewKey(async (pw) => tryDecrypt(fetched.ciphertext, pw));
   renderList(items || []);
 }
 
@@ -407,14 +420,14 @@ async function openIncendi(slug){
   document.getElementById('incendiName').textContent = '…';
   document.getElementById('sondaList').innerHTML = '';
 
-  const data = await withViewKey(async (pw) => {
-    try{
-      const res = await fetch('data/incendis/' + slug + '.json.enc');
-      if(!res.ok) return null;
-      const ciphertext = await res.text();
-      return tryDecrypt(ciphertext, pw);
-    } catch(e){ return null; }
-  });
+  const fetched = await fetchEncrypted('data/incendis/' + slug + '.json.enc');
+  if(!fetched.exists){
+    hideGate();
+    document.getElementById('incendiContent').innerHTML =
+      '<p>Aquest incendi encara no té dades processades.</p>';
+    return;
+  }
+  const data = await withViewKey(async (pw) => tryDecrypt(fetched.ciphertext, pw));
 
   if(!data){
     document.getElementById('incendiContent').innerHTML =
