@@ -82,18 +82,30 @@ def update_incendi(slug, incendi_nom, sonda_data):
     data["sondes"] = [s for s in data["sondes"] if s["sond_id"] != sonda_data["sond_id"]]
     data["sondes"].append(sonda_data)
     write_encrypted_json(path, data)
-    return len(data["sondes"])
+    return data
 
 
-def update_index(slug, incendi_nom, n_sondes):
+def _avg_launch_coords(incendi_data):
+    lats = [s["launch"]["lat"] for s in incendi_data["sondes"] if s.get("launch")]
+    lons = [s["launch"]["lon"] for s in incendi_data["sondes"] if s.get("launch")]
+    if not lats:
+        return None
+    return sum(lats) / len(lats), sum(lons) / len(lons)
+
+
+def update_index(slug, incendi_nom, incendi_data):
     index = read_encrypted_json(INDEX_PATH, [])
     index = [it for it in index if it["slug"] != slug]
-    index.append({
+    entry = {
         "slug": slug,
         "nom": incendi_nom,
-        "n_sondes": n_sondes,
+        "n_sondes": len(incendi_data["sondes"]),
         "actualitzat": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-    })
+    }
+    coords = _avg_launch_coords(incendi_data)
+    if coords:
+        entry["lat"], entry["lon"] = coords
+    index.append(entry)
     index.sort(key=lambda it: it["actualitzat"], reverse=True)
     write_encrypted_json(INDEX_PATH, index)
 
@@ -128,8 +140,8 @@ def main():
             print(f"[error] no s'ha pogut processar {zip_path}: {exc}")
             continue
 
-        n_sondes = update_incendi(slug, incendi_nom, sonda_data)
-        update_index(slug, incendi_nom, n_sondes)
+        incendi_data = update_incendi(slug, incendi_nom, sonda_data)
+        update_index(slug, incendi_nom, incendi_data)
         processed += 1
         print(f"[ok] {incendi_nom} / {sond_id} ({tipus}) processat i xifrat")
 
