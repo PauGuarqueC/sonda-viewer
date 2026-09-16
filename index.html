@@ -688,21 +688,6 @@ function makeWindChart(){
   });
 }
 
-  const ctx = document.getElementById('chartWind').getContext('2d');
-  return new Chart(ctx, {
-    type:'line',
-    data:{ datasets },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      scales:{
-        x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y:{ type:'linear', min:0, max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
-      },
-      plugins:{ legend:{ display:false } }
-    }
-  });
-}
-
 function renderWaypoints(){
   const el = document.getElementById('waypoints');
   el.innerHTML = activeSondes().map(({s, color}) => {
