@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root{
     --bg: #eef0ef; --panel: #ffffff; --panel-border: #d5d5d5;
@@ -47,6 +49,11 @@
   .fire-card h2{ font-size:15px; font-weight:500; margin:0; color:var(--charcoal); }
   .fire-card .meta{ font-family:var(--font-mono); font-size:12px; color:var(--text-dim); }
   #listEmpty{ color:var(--text-dim); font-size:13px; padding:22px; }
+  .toggle-btn{
+    font-family:var(--font-mono); font-size:12px; padding:6px 14px; border:1px solid var(--panel-border);
+    background:var(--panel); color:var(--text-dim); border-radius:5px; cursor:pointer;
+  }
+  .toggle-btn.active{ color:var(--red); border-color:var(--red); }
 
   /* ---- gate de contrasenya (visualitzacio) ---- */
   #gate{
@@ -169,7 +176,12 @@
 <!-- ================= VISTA: llista d'incendis ================= -->
 <div class="view" id="view-list">
   <main>
+    <div class="list-toggle" style="display:flex; gap:6px; margin-bottom:14px;">
+      <button type="button" id="toggleListView" class="toggle-btn active">Llista</button>
+      <button type="button" id="toggleMapView" class="toggle-btn">Mapa</button>
+    </div>
     <div id="fireList"></div>
+    <div id="fireMap" style="display:none; height:480px; border-radius:8px; overflow:hidden; border:1px solid var(--panel-border);"></div>
     <div id="listEmpty" style="display:none;"></div>
   </main>
 </div>
@@ -210,8 +222,12 @@
 
       <div class="lower">
         <div class="block">
-          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;">Deriva horitzontal — color per sonda</h3>
-          <div id="driftBox"></div>
+          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;">Deriva horitzontal — color = alçada</h3>
+          <div id="driftBox" style="height:420px; border-radius:4px; overflow:hidden;"></div>
+          <div class="legend" id="driftLegend" style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:8px;">
+            <span>0 m</span><div style="width:120px;height:8px;border-radius:2px;background:linear-gradient(90deg, #2f6fa8, #b8860b, #C8102E);"></div><span id="driftLegendMax">— m</span>
+            <span style="margin-left:4px;">(alçada MSL del track)</span>
+          </div>
         </div>
         <div class="block">
           <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 4px;">Punts de llançament</h3>
@@ -266,7 +282,7 @@
 const OWNER = "PauGuarqueC";
 const REPO = "sonda-viewer";
 const BRANCH = "main";
-const WORKER_URL = "https://sonda-upload-proxy.pguarque.workers.dev";
+const WORKER_URL = "https://sonda-upload-proxy.YOUR-SUBDOMAIN.workers.dev";
 
 // ============================================================
 // Router (navegacio per hash, sense recarregar la pagina)
@@ -390,6 +406,7 @@ function renderList(items){
     empty.textContent = 'Encara no hi ha cap incendi registrat.';
     empty.style.display = 'block';
     list.innerHTML = '';
+    document.getElementById('fireMap').innerHTML = '';
     return;
   }
   empty.style.display = 'none';
@@ -398,7 +415,51 @@ function renderList(items){
       <h2>${it.nom}</h2>
       <span class="meta">${it.n_sondes} sond${it.n_sondes===1?'a':'es'} · actualitzat ${it.actualitzat || '—'}</span>
     </a>`).join('');
+
+  lastListItems = items;
+  if(document.getElementById('toggleMapView').classList.contains('active')){
+    renderFireMap(items);
+  }
 }
+
+let fireListMap = null;
+let lastListItems = [];
+
+function renderFireMap(items){
+  const withCoords = items.filter(it => it.lat != null && it.lon != null);
+  const mapEl = document.getElementById('fireMap');
+  if(fireListMap){ fireListMap.remove(); fireListMap = null; }
+  if(!withCoords.length){
+    mapEl.innerHTML = '<p style="padding:1rem;color:var(--text-dim);">Cap incendi amb ubicació coneguda encara.</p>';
+    return;
+  }
+  mapEl.innerHTML = '';
+  fireListMap = L.map('fireMap', { scrollWheelZoom: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(fireListMap);
+
+  withCoords.forEach(it => {
+    L.marker([it.lat, it.lon]).addTo(fireListMap)
+      .bindPopup(`<b>${it.nom}</b><br>${it.n_sondes} sonda${it.n_sondes===1?'':'es'}<br><a href="#/incendi/${encodeURIComponent(it.slug)}">obrir →</a>`);
+  });
+  fireListMap.fitBounds(withCoords.map(it => [it.lat, it.lon]), { padding:[30,30], maxZoom: 11 });
+}
+
+document.getElementById('toggleListView').addEventListener('click', () => {
+  document.getElementById('toggleListView').classList.add('active');
+  document.getElementById('toggleMapView').classList.remove('active');
+  document.getElementById('fireList').style.display = 'block';
+  document.getElementById('fireMap').style.display = 'none';
+});
+document.getElementById('toggleMapView').addEventListener('click', () => {
+  document.getElementById('toggleMapView').classList.add('active');
+  document.getElementById('toggleListView').classList.remove('active');
+  document.getElementById('fireList').style.display = 'none';
+  document.getElementById('fireMap').style.display = 'block';
+  renderFireMap(lastListItems);
+});
 
 // ============================================================
 // VISTA: detall d'incendi
@@ -485,7 +546,16 @@ function destroyCharts(){
   charts = {};
 }
 
-function makeMultiChart(canvasId, field, xLabel){
+function dataMaxFor(field){
+  let max = 0;
+  activeSondes().forEach(({s}) => {
+    s.profile.forEach(p => { if(p[field] != null && p[field] > max) max = p[field]; });
+  });
+  return max;
+}
+
+function makeMultiChart(canvasId, field, xLabel, opts){
+  opts = opts || {};
   const maxH = maxHeightAll();
   const datasets = activeSondes().map(({s, color, dash}) => ({
     label: s.sond_id,
@@ -493,6 +563,16 @@ function makeMultiChart(canvasId, field, xLabel){
     borderColor: color, backgroundColor: 'transparent',
     borderWidth: 2, borderDash: dash, pointRadius: 0, tension: 0.15, parsing: false
   }));
+
+  let xMin = opts.xMin != null ? opts.xMin : undefined;
+  let xMax = opts.xMax != null ? opts.xMax : undefined;
+  if(opts.xFloor != null){
+    // eix comença sempre a 0 i arriba com a minim a xFloor; s'ampliar si les dades el superen
+    xMin = 0;
+    const dMax = dataMaxFor(field);
+    xMax = Math.max(opts.xFloor, Math.ceil(dMax / opts.xStep || 1) * (opts.xStep || 1));
+  }
+
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {
     type: 'line',
@@ -500,7 +580,7 @@ function makeMultiChart(canvasId, field, xLabel){
     options: {
       responsive:true, maintainAspectRatio:false,
       scales: {
-        x: { type:'linear', title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
+        x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
         y: { type:'linear', min:0, max:maxH, title:{display: canvasId==='chartTheta', text:'Alçada AGL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins: { legend: { display:false } }
@@ -517,12 +597,12 @@ function makeWindChart(){
     borderColor: color, backgroundColor:'transparent', borderWidth:2, borderDash: dash, pointRadius:0, tension:0.15, parsing:false
   }));
 
-  document.getElementById('windNote').textContent = sondes.length === 1
-    ? "les fletxes indiquen cap on bufa el vent (mostreig cada ~400 m)"
-    : "activa una única sonda per veure les fletxes de direcció";
+  document.getElementById('windNote').textContent =
+    "les fletxes indiquen cap on bufa el vent (mostreig cada ~400 m); color = sonda";
 
-  if(sondes.length === 1){
-    const s = sondes[0].s;
+  // Fletxes de direccio per a CADA sonda activa (no nomes quan n'hi ha una),
+  // acolorides igual que la seva linia perque es puguin distingir.
+  sondes.forEach(({s, color}) => {
     const arrowPts = [];
     let lastH = -Infinity;
     for(const p of s.profile){
@@ -533,11 +613,14 @@ function makeWindChart(){
       }
     }
     datasets.push({
-      type:'scatter', label:'direcció', data: arrowPts, parsing:false,
+      type:'scatter', label:'direcció ' + s.sond_id, data: arrowPts, parsing:false,
       pointStyle:'triangle', pointRadius:6, pointRotation: arrowPts.map(p=>p.rot),
-      backgroundColor:'#2b2b2b', borderColor:'#ffffff', borderWidth:1
+      backgroundColor: color, borderColor:'#ffffff', borderWidth:1
     });
-  }
+  });
+
+  const dMax = dataMaxFor('wind_speed_ms');
+  const xMax = Math.max(15, Math.ceil(dMax / 5) * 5);
 
   const ctx = document.getElementById('chartWind').getContext('2d');
   return new Chart(ctx, {
@@ -546,7 +629,7 @@ function makeWindChart(){
     options:{
       responsive:true, maintainAspectRatio:false,
       scales:{
-        x:{ type:'linear', title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
+        x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
         y:{ type:'linear', min:0, max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
       },
       plugins:{ legend:{ display:false } }
@@ -565,45 +648,84 @@ function renderWaypoints(){
   }).join('');
 }
 
+let driftMap = null;
+
+function altColor(alt, maxAlt){
+  const t = Math.max(0, Math.min(1, alt / (maxAlt || 1)));
+  const stops = [[0.00,[47,111,168]],[0.5,[184,134,11]],[1.00,[200,16,46]]];
+  for(let i=0;i<stops.length-1;i++){
+    const [t0,c0]=stops[i], [t1,c1]=stops[i+1];
+    if(t>=t0 && t<=t1){
+      const f=(t-t0)/(t1-t0);
+      const c=c0.map((v,idx)=>Math.round(v+f*(c1[idx]-v)));
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+  }
+  return `rgb(${stops[stops.length-1][1].join(',')})`;
+}
+
 function renderDrift(){
   const sondes = activeSondes();
-  const allLons = [], allLats = [];
+
+  if(driftMap){ driftMap.remove(); driftMap = null; }
+
+  const allPts = [];
+  sondes.forEach(({s}) => (s.flight_path_3d || []).forEach(([lon,lat]) => allPts.push([lat,lon])));
+
+  if(!allPts.length){
+    document.getElementById('driftBox').innerHTML = '<p style="padding:1rem;color:var(--text-dim);">Sense track disponible per a les sondes actives.</p>';
+    return;
+  }
+
+  document.getElementById('driftBox').innerHTML = '';
+  driftMap = L.map('driftBox', { scrollWheelZoom: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(driftMap);
+
+  let maxAlt = 0;
+  sondes.forEach(({s}) => (s.flight_path_3d || []).forEach(([,,alt]) => { if(alt > maxAlt) maxAlt = alt; }));
+  document.getElementById('driftLegendMax').textContent = Math.round(maxAlt) + ' m';
+
   sondes.forEach(({s}) => {
-    const track = s.flight_path_3d.length ? s.flight_path_3d : [];
-    track.forEach(([lon,lat]) => { allLons.push(lon); allLats.push(lat); });
-  });
-  if(!allLons.length){ document.getElementById('driftBox').innerHTML=''; return; }
-  const minLon=Math.min(...allLons), maxLon=Math.max(...allLons);
-  const minLat=Math.min(...allLats), maxLat=Math.max(...allLats);
-  const lonSpan=(maxLon-minLon)||0.001, latSpan=(maxLat-minLat)||0.001;
-  const W=520,H=420,pad=30;
-  const X = lon => pad + ((lon-minLon)/lonSpan)*(W-2*pad);
-  const Y = lat => H-pad - ((lat-minLat)/latSpan)*(H-2*pad);
-
-  let body = '';
-  sondes.forEach(({s, color, dash}) => {
     const track = s.flight_path_3d;
-    if(!track.length) return;
-    let d = `M ${X(track[0][0]).toFixed(1)} ${Y(track[0][1]).toFixed(1)}`;
-    for(let i=1;i<track.length;i++){ d += ` L ${X(track[i][0]).toFixed(1)} ${Y(track[i][1]).toFixed(1)}`; }
-    const dashAttr = dash.length ? `stroke-dasharray="${dash.join(',')}"` : '';
-    body += `<path d="${d}" fill="none" stroke="${color}" stroke-width="2" ${dashAttr}/>`;
-    if(s.launch){ body += `<circle cx="${X(s.launch.lon).toFixed(1)}" cy="${Y(s.launch.lat).toFixed(1)}" r="4" fill="${color}" stroke="#fff" stroke-width="1.2"/>`; }
+    if(!track || !track.length) return;
+
+    for(let i=1;i<track.length;i++){
+      const [lon0,lat0,alt0] = track[i-1];
+      const [lon1,lat1,alt1] = track[i];
+      L.polyline([[lat0,lon0],[lat1,lon1]], {
+        color: altColor(alt1, maxAlt), weight: 3, opacity: 0.9
+      }).addTo(driftMap);
+    }
+
+    if(s.launch){
+      L.circleMarker([s.launch.lat, s.launch.lon], {
+        radius:6, color:'#fff', weight:1.5, fillColor:'#2b2b2b', fillOpacity:1
+      }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>llançament · ${s.launch_time_utc || '—'} UTC`);
+    }
+    if(s.peak){
+      L.circleMarker([s.peak.lat, s.peak.lon], {
+        radius:6, color:'#fff', weight:1.5, fillColor:'#C8102E', fillOpacity:1
+      }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>pic · ${Math.round(s.peak_agl_m || 0)} m AGL`);
+    }
+    if(s.landing_prediction){
+      L.marker([s.landing_prediction.lat, s.landing_prediction.lon], {
+        opacity: 0.8
+      }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>predicció d'aterratge`);
+    }
   });
 
-  document.getElementById('driftBox').innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
-       <rect x="0" y="0" width="${W}" height="${H}" fill="#fafafa" stroke="#d5d5d5"/>
-       ${body}
-     </svg>`;
+  driftMap.fitBounds(allPts, { padding: [20,20] });
 }
 
 function renderAllCharts(){
   destroyCharts();
   charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)');
-  charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)');
+  charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', { xMin:0, xMax:100 });
   charts.wind = makeWindChart();
-  charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s');
+  charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', { xFloor:10, xStep:5 });
   renderWaypoints();
   renderDrift();
 }
