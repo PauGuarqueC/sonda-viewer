@@ -46,14 +46,22 @@ def _pkcs7_unpad(data: bytes) -> bytes:
 
 
 def encrypt_str(plaintext: str, passphrase: str) -> str:
-    salt = os.urandom(8)
-    key, iv = _evp_bytes_to_key(passphrase.encode("utf-8"), salt, _KEY_LEN, _IV_LEN)
-    cipher = AES.new(key, AES.MODE_CBC, iv)
-    ct = cipher.encrypt(_pkcs7_pad(plaintext.encode("utf-8")))
-    return base64.b64encode(_SALT_PREFIX + salt + ct).decode("ascii")
+    return encrypt_bytes(plaintext.encode("utf-8"), passphrase)
 
 
 def decrypt_str(ciphertext_b64: str, passphrase: str) -> str:
+    return decrypt_bytes(ciphertext_b64, passphrase).decode("utf-8")
+
+
+def encrypt_bytes(plain_bytes: bytes, passphrase: str) -> str:
+    salt = os.urandom(8)
+    key, iv = _evp_bytes_to_key(passphrase.encode("utf-8"), salt, _KEY_LEN, _IV_LEN)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    ct = cipher.encrypt(_pkcs7_pad(plain_bytes))
+    return base64.b64encode(_SALT_PREFIX + salt + ct).decode("ascii")
+
+
+def decrypt_bytes(ciphertext_b64: str, passphrase: str) -> bytes:
     raw = base64.b64decode(ciphertext_b64)
     if raw[:8] != _SALT_PREFIX:
         raise ValueError("Format invalid: no comença amb 'Salted__'")
@@ -61,5 +69,4 @@ def decrypt_str(ciphertext_b64: str, passphrase: str) -> str:
     ct = raw[16:]
     key, iv = _evp_bytes_to_key(passphrase.encode("utf-8"), salt, _KEY_LEN, _IV_LEN)
     cipher = AES.new(key, AES.MODE_CBC, iv)
-    pt = _pkcs7_unpad(cipher.decrypt(ct))
-    return pt.decode("utf-8")
+    return _pkcs7_unpad(cipher.decrypt(ct))
