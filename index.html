@@ -215,7 +215,6 @@
         <div class="block">
           <h4>Vent — velocitat i direcció</h4>
           <div class="chart-h"><canvas id="chartWind"></canvas></div>
-            <div class="wind-note" id="windNote">barbes a la dreta: cada ploma=10kt, mitja=5kt, bandera=50kt; color=sonda</div>
         </div>
         <div class="block"><h4>Velocitat d'ascens (m/s)</h4><div class="chart-h"><canvas id="chartRise"></canvas></div></div>
       </div>
@@ -590,7 +589,7 @@ function makeMultiChart(canvasId, field, xLabel, opts){
 
 function drawWindBarb(ctx, x, y, speedMs, dirDeg, color){
   const speedKt = Math.round((speedMs * 1.94384) / 5) * 5; // arrodonit a 5 nusos
-  const shaftLen = 26, barbLen = 8, spacing = 4.5;
+  const shaftLen = 16, barbLen = 5, spacing = 2.8;
 
   ctx.save();
   ctx.translate(x, y);
@@ -662,7 +661,7 @@ function makeWindChart(){
   const maxH = maxHeightAll();
   const sondes = activeSondes();
   const dMax = dataMaxFor('wind_speed_ms');
-  const xMax = Math.max(15, Math.ceil(dMax / 5) * 5);
+  const xMax = Math.max(14, Math.ceil(dMax / 2) * 2);
   const arrowX = xMax * 0.88;
 
   const datasets = sondes.map(({s, color, dash}) => ({
@@ -678,7 +677,7 @@ function makeWindChart(){
     plugins: [windBarbsPlugin],
     options:{
       responsive:true, maintainAspectRatio:false,
-      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 34 },
+      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 16 },
       scales:{
         x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
         y:{ type:'linear', min:0, max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
