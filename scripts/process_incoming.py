@@ -147,15 +147,11 @@ def main():
     processed = 0
     for zip_enc_path in all_enc:
         slug = zip_enc_path.parent.name
-        sond_id = zip_enc_path.name[: -len(".zip.enc")]
-        meta_enc_path = zip_enc_path.with_name(sond_id + ".meta.json.enc")
+        batch_id = zip_enc_path.name[: -len(".zip.enc")]
+        meta_enc_path = zip_enc_path.with_name(batch_id + ".meta.json.enc")
 
         if not meta_enc_path.exists():
             print(f"[avis] {zip_enc_path} no te fitxer .meta.json.enc parell, l'ignoro (buscava {meta_enc_path})")
-            continue
-
-        if already_processed(slug, sond_id):
-            print(f"[debug] {sond_id} ja processat anteriorment, l'ignoro")
             continue
 
         try:
@@ -173,19 +169,30 @@ def main():
         tipus = meta.get("tipus")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_zip_path = Path(tmp_dir) / f"{sond_id}.zip"
+            tmp_zip_path = Path(tmp_dir) / f"{batch_id}.zip"
             tmp_zip_path.write_bytes(zip_bytes)
 
             try:
-                sonda_data = build_sonda_json(tmp_zip_path, incendi=incendi_nom, tipus=tipus)
+                # Una pujada (un .zip) pot portar mes d'una sonda a dins si
+                # no s'han separat en fitxers diferents -- build_sonda_json
+                # les detecta totes soles i les torna com una llista.
+                sonda_list = build_sonda_json(tmp_zip_path, incendi=incendi_nom, tipus=tipus)
             except Exception as exc:  # noqa: BLE001
                 print(f"[error] no s'ha pogut processar {zip_enc_path}: {exc}")
                 continue
 
-        incendi_data = update_incendi(slug, incendi_nom, sonda_data)
-        update_index(slug, incendi_nom, incendi_data)
-        processed += 1
-        print(f"[ok] {incendi_nom} / {sond_id} ({tipus}) processat i xifrat")
+        incendi_data = None
+        for sonda_data in sonda_list:
+            sond_id = sonda_data["sond_id"]
+            if already_processed(slug, sond_id):
+                print(f"[debug] {sond_id} ja processat anteriorment, l'ignoro")
+                continue
+            incendi_data = update_incendi(slug, incendi_nom, sonda_data)
+            processed += 1
+            print(f"[ok] {incendi_nom} / {sond_id} ({sonda_data['tipus']}) processat i xifrat")
+
+        if incendi_data is not None:
+            update_index(slug, incendi_nom, incendi_data)
 
     backfill_index_locations()
 
