@@ -114,6 +114,7 @@
   .swatch{ width:10px; height:10px; border-radius:2px; flex-shrink:0; }
   .sonda-row .sid{ color:var(--charcoal); }
   .sonda-row .tp{ color:var(--text-dim); font-size:11px; }
+  .sonda-row .tp-edit{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); border:1px solid var(--panel-border); border-radius:3px; padding:1px 2px; background:#fff; }
   .sidebar-note{ font-size:11px; color:var(--text-dim); margin-top:14px; line-height:1.5; border-top:1px solid var(--panel-border); padding-top:12px; }
 
   #incendiContent{ padding:20px 22px 6px; }
@@ -427,7 +428,11 @@ function hideGate(){
 
 async function fetchEncrypted(path){
   try{
-    const res = await fetch(path);
+    // cache:'no-store' + un parametre unic per evitar que el navegador (o
+    // GitHub Pages / la CDN pel mig) serveixi una copia antiga d'aquest
+    // fitxer -- sense aixo, tornar a la llista d'incendis despres de pujar
+    // una sonda nova podia mostrar dades vells fins fer un refresc dur.
+    const res = await fetch(`${path}?_=${Date.now()}`, { cache: 'no-store' });
     if(!res.ok) return { exists:false };
     return { exists:true, ciphertext: await res.text() };
   } catch(e){
@@ -548,6 +553,7 @@ document.getElementById('toggleMapView').addEventListener('click', () => {
 // VISTA: detall d'incendi
 // ============================================================
 let INCENDI = null;
+let currentSlug = null;
 let activeIds = new Set();
 
 // ============================================================
@@ -710,6 +716,7 @@ function tipusColor(tipus, idxWithinType){
 async function openIncendi(slug){
   destroyCharts();
   INCENDI = null;
+  currentSlug = slug;
   document.getElementById('incendiName').textContent = '…';
   document.getElementById('sondaList').innerHTML = '';
   modelData = null;
@@ -818,7 +825,10 @@ function buildSidebar(){
       <input type="checkbox" checked data-id="${s.sond_id}">
       <span class="swatch" style="background:${color}"></span>
       <span class="sid">${sondaLabel(s.sond_id)}</span>
-      <span class="tp">(${s.tipus || '—'})</span>
+      <select class="tp-edit" data-sond-id="${s.sond_id}" title="canvia el tipus">
+        <option value="ambient" ${s.tipus==='ambient'?'selected':''}>ambient</option>
+        <option value="columna" ${s.tipus==='columna'?'selected':''}>columna</option>
+      </select>
     </label>`;
   }).join('');
   list.querySelectorAll('input[type=checkbox]').forEach(cb => {
@@ -827,6 +837,40 @@ function buildSidebar(){
       renderAllCharts();
     });
   });
+  list.querySelectorAll('.tp-edit').forEach(sel => {
+    // evita que clicar el desplegable (dins la <label>) marqui/desmarqui el checkbox
+    sel.addEventListener('click', e => e.stopPropagation());
+    sel.addEventListener('change', e => editSondaTipus(sel.dataset.sondId, sel.value, sel));
+  });
+}
+
+async function editSondaTipus(sondId, newTipus, selectEl){
+  const sondaBefore = INCENDI.sondes.find(s => s.sond_id === sondId);
+  const previousTipus = sondaBefore ? sondaBefore.tipus : null;
+
+  let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
+  if(!password){
+    password = prompt('Contrasenya de pujada (cal per editar sondes):') || '';
+    if(!password) { selectEl.value = previousTipus; return; }
+  }
+
+  selectEl.disabled = true;
+  try{
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, action: 'edit_tipus', slug: currentSlug, sondId, newTipus })
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+    // recarreguem l'incendi sencer perque els colors (que depenen de quantes
+    // sondes hi ha de cada tipus) es recalculin be arreu
+    await openIncendi(currentSlug);
+  } catch(err){
+    alert('No s\'ha pogut canviar el tipus: ' + err.message);
+    selectEl.value = previousTipus;
+    selectEl.disabled = false;
+  }
 }
 
 function activeSondes(){
