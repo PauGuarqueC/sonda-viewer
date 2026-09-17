@@ -39,6 +39,39 @@ def _open_member(zf, suffix):
     return None
 
 
+def _group_sonde_members(zf):
+    """Agrupa els fitxers del zip per sonda, pel seu nom base compartit.
+
+    Permet que un mateix ZIP contingui els fitxers de diverses sondes
+    barrejats (p.ex. quan es puja tot de cop sense separar per carpetes):
+    cada .sounding.csv marca una sonda, i es busca el .raw_flight_history.csv
+    i el .kml que comparteixin exactament el mateix nom base.
+    """
+    names = zf.namelist()
+    groups = []
+    for name in names:
+        if name.lower().endswith(".sounding.csv"):
+            stem = Path(name).name
+            stem = stem[: -len(".sounding.csv")]
+            flight_name = next(
+                (n for n in names if Path(n).name.lower() == (stem + ".raw_flight_history.csv").lower()),
+                None,
+            )
+            kml_name = next(
+                (n for n in names if Path(n).name.lower() == (stem + ".kml").lower()),
+                None,
+            )
+            groups.append({"stem": stem, "sounding_name": name, "flight_name": flight_name, "kml_name": kml_name})
+    return groups
+
+
+def _guess_tipus(stem, default_tipus):
+    """Si el nom de fitxer de la sonda inclou 'columna' (com ja fem al
+    navegador en pujar), ho fem servir per sobre del tipus per defecte del
+    formulari -- util quan una mateixa pujada barreja ambient i columna."""
+    return "columna" if "column" in stem.lower() else default_tipus
+
+
 def parse_sounding_csv(text):
     """Perfil vertical net (Height AGL, P, T, RH, vent). Ignora linies de comentari (#)."""
     lines = [l for l in text.splitlines() if l.strip() and not l.lstrip().startswith("#")]
@@ -180,31 +213,7 @@ def parse_kml(text):
     return result
 
 
-def build_sonda_json(zip_path, incendi=None, tipus=None):
-    zip_path = Path(zip_path)
-
-    with zipfile.ZipFile(zip_path) as zf:
-        sounding_name = _open_member(zf, ".sounding.csv")
-        flight_name = _open_member(zf, ".raw_flight_history.csv")
-        kml_name = _open_member(zf, ".kml")
-
-        if not sounding_name or not flight_name:
-            raise ValueError("Falten sounding.csv o raw_flight_history.csv al zip")
-
-        # sond_id ve del nom real del .sounding.csv dins el zip (el que genera
-        # sempre el Windsond amb el mateix format), no del nom del ZIP en si
-        # -- aixi no depen de com algu hagi anomenat/canviat el nom del fitxer
-        # pujat.
-        sond_id = Path(sounding_name).name
-        for suf in (".sounding.csv",):
-            if sond_id.lower().endswith(suf):
-                sond_id = sond_id[: -len(suf)]
-                break
-
-        sounding_text = zf.read(sounding_name).decode("utf-8", errors="replace")
-        flight_text = zf.read(flight_name).decode("utf-8", errors="replace")
-        kml_text = zf.read(kml_name).decode("utf-8", errors="replace") if kml_name else None
-
+def _build_one_sonda(sounding_text, flight_text, kml_text, sond_id, incendi, tipus):
     profile = parse_sounding_csv(sounding_text)
     flight_rows = parse_flight_history_csv(flight_text)
     launch_time_utc = find_launch_time(flight_rows)
@@ -230,7 +239,7 @@ def build_sonda_json(zip_path, incendi=None, tipus=None):
     if valid_agls:
         peak_agl = max(valid_agls)
 
-    output = {
+    return {
         "sond_id": sond_id,
         "incendi": incendi,
         "tipus": tipus,  # "ambient" | "columna"
@@ -242,7 +251,30 @@ def build_sonda_json(zip_path, incendi=None, tipus=None):
         "flight_path_3d": kml_info["flight_path_3d"],
         "profile": profile,
     }
-    return output
+
+
+def build_sonda_json(zip_path, incendi=None, tipus=None):
+    """Torna una LLISTA de sondes (normalment 1, pero pot haver-n'hi mes
+    d'una si el ZIP porta els fitxers de diverses sondes barrejats sense
+    separar-los -- es detecten agrupant-los pel seu nom base compartit)."""
+    zip_path = Path(zip_path)
+
+    parsed = []
+    with zipfile.ZipFile(zip_path) as zf:
+        groups = _group_sonde_members(zf)
+        if not groups:
+            raise ValueError("Cap .sounding.csv trobat al zip")
+
+        for g in groups:
+            if not g["flight_name"]:
+                raise ValueError(f"Falta el .raw_flight_history.csv de {g['stem']} al zip")
+            sounding_text = zf.read(g["sounding_name"]).decode("utf-8", errors="replace")
+            flight_text = zf.read(g["flight_name"]).decode("utf-8", errors="replace")
+            kml_text = zf.read(g["kml_name"]).decode("utf-8", errors="replace") if g["kml_name"] else None
+            sonda_tipus = _guess_tipus(g["stem"], tipus)
+            parsed.append(_build_one_sonda(sounding_text, flight_text, kml_text, g["stem"], incendi, sonda_tipus))
+
+    return parsed
 
 
 def main():
@@ -253,20 +285,21 @@ def main():
     ap.add_argument("-o", "--output", default=None)
     args = ap.parse_args()
 
-    data = build_sonda_json(args.zip_path, incendi=args.incendi, tipus=args.tipus)
+    sonda_list = build_sonda_json(args.zip_path, incendi=args.incendi, tipus=args.tipus)
 
     out_path = args.output or (Path(args.zip_path).stem + ".sonda.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(sonda_list, f, ensure_ascii=False, indent=2)
 
-    print(f"OK -> {out_path}")
-    print(f"  sond_id: {data['sond_id']}")
-    print(f"  launch_time_utc (real, no del nom de fitxer): {data['launch_time_utc']}")
-    print(f"  punts de perfil: {len(data['profile'])}")
-    print(f"  punts de track 3D (kml): {len(data['flight_path_3d'])}")
-    print(f"  pic AGL: {data['peak_agl_m']} m")
-    with_rise = sum(1 for p in data["profile"] if p["rise_speed_ms"] is not None)
-    print(f"  punts del perfil amb rise_speed interpolat: {with_rise}/{len(data['profile'])}")
+    print(f"OK -> {out_path} ({len(sonda_list)} sonda{'es' if len(sonda_list) != 1 else ''} al zip)")
+    for data in sonda_list:
+        print(f"  sond_id: {data['sond_id']} (tipus: {data['tipus']})")
+        print(f"    launch_time_utc (real, no del nom de fitxer): {data['launch_time_utc']}")
+        print(f"    punts de perfil: {len(data['profile'])}")
+        print(f"    punts de track 3D (kml): {len(data['flight_path_3d'])}")
+        print(f"    pic AGL: {data['peak_agl_m']} m")
+        with_rise = sum(1 for p in data["profile"] if p["rise_speed_ms"] is not None)
+        print(f"    punts del perfil amb rise_speed interpolat: {with_rise}/{len(data['profile'])}")
 
 
 if __name__ == "__main__":
