@@ -117,7 +117,8 @@
   .sidebar-note{ font-size:11px; color:var(--text-dim); margin-top:14px; line-height:1.5; border-top:1px solid var(--panel-border); padding-top:12px; }
 
   #incendiContent{ padding:20px 22px 6px; }
-  .section-title{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+  .section-title{ display:flex; align-items:baseline; margin-bottom:10px; gap:14px; }
+  .section-title .hint{ margin-right:auto; }
   .section-title h3{ font-size:13px; font-weight:500; color:var(--text-dim); margin:0; }
   .section-title .hint{ font-family:var(--font-mono); font-size:11px; color:var(--text-dim); }
 
@@ -520,6 +521,14 @@ let charts = {};
 const COLORS = { ambient: ['#2f6fa8', '#5a9bd4'], columna: ['#C8102E', '#e2536c'] };
 const DASH = [[], [6,3], [2,2], [8,2,2,2]];
 
+function sondaLabel(sondId){
+  // Nomes la part data+hora del nom del .sounding (p.ex. "2026-09-15_1944"),
+  // encara que el sond_id complet porti el nom de l'incendi al darrere
+  // (p.ex. "2026-09-15_1944_Alfarràs").
+  const m = sondId.match(/^\d{4}-\d{2}-\d{2}_\d{3,4}/);
+  return m ? m[0] : sondId;
+}
+
 function tipusColor(tipus, idxWithinType){
   const arr = COLORS[tipus] || ['#5a5a5a', '#8a8a8a'];
   return arr[idxWithinType % arr.length];
@@ -631,7 +640,7 @@ function buildSidebar(){
     return `<label class="sonda-row">
       <input type="checkbox" checked data-id="${s.sond_id}">
       <span class="swatch" style="background:${color}"></span>
-      <span class="sid">${s.sond_id}</span>
+      <span class="sid">${sondaLabel(s.sond_id)}</span>
       <span class="tp">(${s.tipus || '—'})</span>
     </label>`;
   }).join('');
@@ -792,7 +801,7 @@ function renderWaypoints(){
   el.innerHTML = activeSondes().map(({s, color}) => {
     const l = s.launch;
     return `<div class="wp-row">
-      <span><span class="swatch" style="display:inline-block;background:${color};width:8px;height:8px;border-radius:2px;margin-right:6px;"></span>${s.sond_id}</span>
+      <span><span class="swatch" style="display:inline-block;background:${color};width:8px;height:8px;border-radius:2px;margin-right:6px;"></span>${sondaLabel(s.sond_id)}</span>
       <b>${l ? l.lat.toFixed(4)+', '+l.lon.toFixed(4) : '—'} · ${s.launch_time_utc || '—'} UTC</b>
     </div>`;
   }).join('');
@@ -911,18 +920,25 @@ function downloadChartsImage(){
     x += c.width + gap;
   });
 
-  // Llegenda SOTA els gràfics (sota els titols dels eixos X), nomes sondes actives
+  // Llegenda SOTA els gràfics (sota els titols dels eixos X), centrada, nomes sondes actives
   const swatchSize = 11;
   const legendY = topMargin + chartsH + 18;
-  let lx = 6;
+  const itemGap = 22;
   ctx.font = '12px sans-serif';
-  activeSondes().forEach(({s, color}) => {
-    ctx.fillStyle = color;
+
+  const items = activeSondes().map(({s, color}) => ({
+    color, label: `${s.tipus || '—'} — ${sondaLabel(s.sond_id)}`
+  }));
+  const widths = items.map(it => swatchSize + 6 + ctx.measureText(it.label).width);
+  const totalW = widths.reduce((a, b) => a + b, 0) + itemGap * (items.length - 1);
+
+  let lx = (w - totalW) / 2;
+  items.forEach((it, i) => {
+    ctx.fillStyle = it.color;
     ctx.fillRect(lx, legendY - swatchSize + 2, swatchSize, swatchSize);
     ctx.fillStyle = '#2b2b2b';
-    const label = `${s.tipus || '—'} — ${s.sond_id}`;
-    ctx.fillText(label, lx + swatchSize + 6, legendY + 2);
-    lx += swatchSize + 6 + ctx.measureText(label).width + 22;
+    ctx.fillText(it.label, lx + swatchSize + 6, legendY + 2);
+    lx += widths[i] + itemGap;
   });
 
   const link = document.createElement('a');
