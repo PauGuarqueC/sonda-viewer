@@ -225,6 +225,7 @@
       <div class="section-title">
         <h3>Perfil vertical</h3>
         <span class="hint">eix d'alçada compartit entre panells i sondes</span>
+        <button type="button" id="downloadChartsBtn" class="toggle-btn" style="margin-left:auto;">Descarrega imatge</button>
       </div>
       <div class="profile-strip">
         <div class="block">
@@ -748,7 +749,7 @@ const windBarbsPlugin = {
           if(d < nearestDist){ nearestDist = d; nearest = p; }
         }
         if(nearest && nearestDist <= tol){
-          drawWindBarb(chart.ctx, xPixCenter + xOff, yPix, nearest.wind_speed_ms, (nearest.wind_dir_deg + 180) % 360, color);
+          drawWindBarb(chart.ctx, xPixCenter + xOff, yPix, nearest.wind_speed_ms, nearest.wind_dir_deg, color);
         }
       }
     });
@@ -884,6 +885,38 @@ function renderDrift(){
 
   driftMap.fitBounds(allPts, { padding: [20,20] });
 }
+
+function downloadChartsImage(){
+  const ids = ['chartTheta', 'chartRh', 'chartWind', 'chartRise'];
+  const canvases = ids.map(id => document.getElementById(id));
+  const gap = 24, topMargin = 34;
+  const w = canvases.reduce((sum, c) => sum + c.width, 0) + gap * (canvases.length - 1);
+  const h = Math.max(...canvases.map(c => c.height)) + topMargin;
+
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+
+  let x = 0;
+  canvases.forEach(c => {
+    ctx.drawImage(c, x, topMargin);
+    x += c.width + gap;
+  });
+
+  ctx.fillStyle = '#2b2b2b';
+  ctx.font = '16px sans-serif';
+  const title = `Incendi ${INCENDI.incendi || ''} — perfil vertical`;
+  ctx.fillText(title, 6, 22);
+
+  const link = document.createElement('a');
+  const safeName = (INCENDI.incendi || 'incendi').replace(/[^a-zA-Z0-9]+/g, '_');
+  link.download = `${safeName}_perfil.png`;
+  link.href = out.toDataURL('image/png');
+  link.click();
+}
+document.getElementById('downloadChartsBtn').addEventListener('click', downloadChartsImage);
 
 function renderAllCharts(){
   destroyCharts();
