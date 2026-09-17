@@ -54,9 +54,23 @@
     background:var(--panel); color:var(--text-dim); border-radius:5px; cursor:pointer;
   }
   .toggle-btn.active{ color:var(--red); border-color:var(--red); }
-  .mini-slider{ display:flex; align-items:center; gap:6px; margin:2px 0 8px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); }
-  .mini-slider input[type=range]{ flex:1; min-width:0; height:3px; }
-  .mini-slider span:last-child{ width:38px; text-align:right; }
+  .mini-slider{ display:flex; align-items:center; gap:6px; margin:6px 0 2px; font-family:var(--font-mono); font-size:10px; color:var(--text-dim); }
+  .dual-slider{ position:relative; height:16px; flex:1; }
+  .dual-slider input[type=range]{
+    position:absolute; top:0; left:0; width:100%; margin:0; height:16px;
+    -webkit-appearance:none; appearance:none; background:none; pointer-events:none;
+  }
+  .dual-slider input[type=range]::-webkit-slider-runnable-track{ height:3px; background:var(--panel-border); margin-top:6.5px; }
+  .dual-slider input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; pointer-events:auto; width:11px; height:11px; border-radius:50%;
+    background:var(--text-dim); cursor:pointer; margin-top:-4px; border:1.5px solid #fff;
+  }
+  .dual-slider input[type=range]::-moz-range-track{ height:3px; background:var(--panel-border); }
+  .dual-slider input[type=range]::-moz-range-thumb{
+    pointer-events:auto; width:11px; height:11px; border-radius:50%;
+    background:var(--text-dim); cursor:pointer; border:1.5px solid #fff;
+  }
+  .mini-slider .readout{ width:78px; text-align:right; flex-shrink:0; }
 
   /* ---- gate de contrasenya (visualitzacio) ---- */
   #gate{
@@ -212,31 +226,45 @@
         <h3>Perfil vertical</h3>
         <span class="hint">eix d'alçada compartit entre panells i sondes</span>
       </div>
-      <div class="mini-slider" style="max-width:320px;">
-        <span>alçada max</span><input type="range" id="sliderHeight"><span id="sliderHeightVal"></span>
-      </div>
       <div class="profile-strip">
         <div class="block">
           <h4>θᵥ potencial virtual (K)</h4>
-          <div class="mini-slider"><span>max</span><input type="range" id="sliderTheta"><span id="sliderThetaVal"></span></div>
           <div class="chart-h"><canvas id="chartTheta"></canvas></div>
+          <div class="mini-slider">
+            <div class="dual-slider"><input type="range" id="sliderThetaMin"><input type="range" id="sliderThetaMax"></div>
+            <span class="readout"><span id="sliderThetaMinVal"></span>–<span id="sliderThetaMaxVal"></span></span>
+          </div>
         </div>
         <div class="block">
           <h4>Humitat relativa (%)</h4>
-          <div class="mini-slider"><span>max</span><input type="range" id="sliderRh" min="10" max="100" step="5"><span id="sliderRhVal"></span></div>
           <div class="chart-h"><canvas id="chartRh"></canvas></div>
+          <div class="mini-slider">
+            <div class="dual-slider"><input type="range" id="sliderRhMin"><input type="range" id="sliderRhMax"></div>
+            <span class="readout"><span id="sliderRhMinVal"></span>–<span id="sliderRhMaxVal"></span></span>
+          </div>
         </div>
         <div class="block">
           <h4>Vent — velocitat i direcció</h4>
-          <div class="mini-slider"><span>max</span><input type="range" id="sliderWind"><span id="sliderWindVal"></span></div>
           <div class="chart-h"><canvas id="chartWind"></canvas></div>
           <div class="wind-note" id="windNote"></div>
+          <div class="mini-slider">
+            <div class="dual-slider"><input type="range" id="sliderWindMin"><input type="range" id="sliderWindMax"></div>
+            <span class="readout"><span id="sliderWindMinVal"></span>–<span id="sliderWindMaxVal"></span></span>
+          </div>
         </div>
         <div class="block">
           <h4>Velocitat d'ascens (m/s)</h4>
-          <div class="mini-slider"><span>max</span><input type="range" id="sliderRise"><span id="sliderRiseVal"></span></div>
           <div class="chart-h"><canvas id="chartRise"></canvas></div>
+          <div class="mini-slider">
+            <div class="dual-slider"><input type="range" id="sliderRiseMin"><input type="range" id="sliderRiseMax"></div>
+            <span class="readout"><span id="sliderRiseMinVal"></span>–<span id="sliderRiseMaxVal"></span></span>
+          </div>
         </div>
+      </div>
+      <div class="mini-slider" style="max-width:340px; margin-top:10px;">
+        <span style="flex-shrink:0;">alçada (m ASL)</span>
+        <div class="dual-slider"><input type="range" id="sliderHeightMin"><input type="range" id="sliderHeightMax"></div>
+        <span class="readout"><span id="sliderHeightMinVal"></span>–<span id="sliderHeightMaxVal"></span></span>
       </div>
 
       <div class="lower">
@@ -545,35 +573,51 @@ function setupAxisSliders(){
   const windMax = Math.max(14, Math.ceil(fieldMaxAll('wind_speed_ms') / 2) * 2);
   const riseMax = Math.max(10, Math.ceil(fieldMaxAll('rise_speed_ms') / 5) * 5);
 
-  axisDataDefault = { height: heightMax, thetaMin, theta: thetaMax, rh: 100, wind: windMax, rise: riseMax };
-  axisMax = { height: heightMax, theta: thetaMax, rh: 100, wind: windMax, rise: riseMax };
+  axisMax = {
+    height: { min:0, max:heightMax },
+    theta:  { min:thetaMin, max:thetaMax },
+    rh:     { min:0, max:100 },
+    wind:   { min:0, max:windMax },
+    rise:   { min:0, max:riseMax },
+  };
 
-  configureSlider('sliderHeight', 'sliderHeightVal', 500, heightMax, 100, heightMax);
-  configureSlider('sliderTheta', 'sliderThetaVal', thetaMin + 4, thetaMax, 2, thetaMax);
-  configureSlider('sliderRh', 'sliderRhVal', 10, 100, 5, 100);
-  configureSlider('sliderWind', 'sliderWindVal', 5, windMax, 1, windMax);
-  configureSlider('sliderRise', 'sliderRiseVal', 2, riseMax, 1, riseMax);
+  configureDualSlider('sliderHeightMin', 'sliderHeightMax', 'sliderHeightMinVal', 'sliderHeightMaxVal', 0, heightMax, 100, 0, heightMax);
+  configureDualSlider('sliderThetaMin', 'sliderThetaMax', 'sliderThetaMinVal', 'sliderThetaMaxVal', thetaMin - 6, thetaMax, 2, thetaMin, thetaMax);
+  configureDualSlider('sliderRhMin', 'sliderRhMax', 'sliderRhMinVal', 'sliderRhMaxVal', 0, 100, 5, 0, 100);
+  configureDualSlider('sliderWindMin', 'sliderWindMax', 'sliderWindMinVal', 'sliderWindMaxVal', 0, windMax, 1, 0, windMax);
+  configureDualSlider('sliderRiseMin', 'sliderRiseMax', 'sliderRiseMinVal', 'sliderRiseMaxVal', 0, riseMax, 1, 0, riseMax);
 }
 
-function configureSlider(inputId, valId, min, max, step, value){
-  const input = document.getElementById(inputId);
-  input.min = min; input.max = max; input.step = step; input.value = value;
-  document.getElementById(valId).textContent = value;
+function configureDualSlider(minId, maxId, minValId, maxValId, bound_lo, bound_hi, step, value_lo, value_hi){
+  const minInput = document.getElementById(minId), maxInput = document.getElementById(maxId);
+  [minInput, maxInput].forEach(el => { el.min = bound_lo; el.max = bound_hi; el.step = step; });
+  minInput.value = value_lo; maxInput.value = value_hi;
+  document.getElementById(minValId).textContent = value_lo;
+  document.getElementById(maxValId).textContent = value_hi;
 }
 
-function wireAxisSlider(inputId, valId, key){
-  const input = document.getElementById(inputId);
-  input.addEventListener('input', () => {
-    axisMax[key] = parseFloat(input.value);
-    document.getElementById(valId).textContent = input.value;
+function wireDualSlider(minId, maxId, minValId, maxValId, key){
+  const minInput = document.getElementById(minId), maxInput = document.getElementById(maxId);
+  minInput.addEventListener('input', () => {
+    let v = parseFloat(minInput.value);
+    if(v > axisMax[key].max){ v = axisMax[key].max; minInput.value = v; }
+    axisMax[key].min = v;
+    document.getElementById(minValId).textContent = v;
+    renderAllCharts();
+  });
+  maxInput.addEventListener('input', () => {
+    let v = parseFloat(maxInput.value);
+    if(v < axisMax[key].min){ v = axisMax[key].min; maxInput.value = v; }
+    axisMax[key].max = v;
+    document.getElementById(maxValId).textContent = v;
     renderAllCharts();
   });
 }
-wireAxisSlider('sliderHeight', 'sliderHeightVal', 'height');
-wireAxisSlider('sliderTheta', 'sliderThetaVal', 'theta');
-wireAxisSlider('sliderRh', 'sliderRhVal', 'rh');
-wireAxisSlider('sliderWind', 'sliderWindVal', 'wind');
-wireAxisSlider('sliderRise', 'sliderRiseVal', 'rise');
+wireDualSlider('sliderHeightMin', 'sliderHeightMax', 'sliderHeightMinVal', 'sliderHeightMaxVal', 'height');
+wireDualSlider('sliderThetaMin', 'sliderThetaMax', 'sliderThetaMinVal', 'sliderThetaMaxVal', 'theta');
+wireDualSlider('sliderRhMin', 'sliderRhMax', 'sliderRhMinVal', 'sliderRhMaxVal', 'rh');
+wireDualSlider('sliderWindMin', 'sliderWindMax', 'sliderWindMinVal', 'sliderWindMaxVal', 'wind');
+wireDualSlider('sliderRiseMin', 'sliderRiseMax', 'sliderRiseMinVal', 'sliderRiseMaxVal', 'rise');
 
 function buildSidebar(){
   document.getElementById('incendiName').textContent = INCENDI.incendi || '—';
@@ -615,9 +659,10 @@ function destroyCharts(){
 }
 
 function makeMultiChart(canvasId, field, xLabel, axisKey){
-  const xMin = axisKey === 'theta' ? axisDataDefault.thetaMin : 0;
-  const xMax = axisMax[axisKey];
-  const yMax = axisMax.height;
+  const xMin = axisMax[axisKey].min;
+  const xMax = axisMax[axisKey].max;
+  const yMin = axisMax.height.min;
+  const yMax = axisMax.height.max;
   const datasets = activeSondes().map(({s, color, dash}) => ({
     label: s.sond_id,
     data: s.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.alt_msl_m})),
@@ -633,7 +678,7 @@ function makeMultiChart(canvasId, field, xLabel, axisKey){
       responsive:true, maintainAspectRatio:false,
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y: { type:'linear', min:0, max:yMax, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
+        y: { type:'linear', min:yMin, max:yMax, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins: { legend: { display:false } }
     }
@@ -712,8 +757,10 @@ const windBarbsPlugin = {
 
 function makeWindChart(){
   const sondes = activeSondes();
-  const xMax = axisMax.wind;
-  const yMax = axisMax.height;
+  const xMin = axisMax.wind.min;
+  const xMax = axisMax.wind.max;
+  const yMin = axisMax.height.min;
+  const yMax = axisMax.height.max;
   const arrowX = xMax * 0.88; // columna fixa a la dreta, no sobre la linia
 
   const datasets = sondes.map(({s, color, dash}) => ({
@@ -731,8 +778,8 @@ function makeWindChart(){
       responsive:true, maintainAspectRatio:false,
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
       scales:{
-        x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y:{ type:'linear', min:0, max:yMax, ticks:{display:false}, grid:{color:'#e5e5e5'} }
+        x:{ type:'linear', min:xMin, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
+        y:{ type:'linear', min:yMin, max:yMax, ticks:{display:false}, grid:{color:'#e5e5e5'} }
       },
       plugins:{ legend:{ display:false } }
     }
