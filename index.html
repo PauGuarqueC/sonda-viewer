@@ -209,6 +209,10 @@
         <h3>Perfil vertical</h3>
         <span class="hint">eix d'alçada compartit entre panells i sondes</span>
       </div>
+      <div style="margin-bottom:10px;">
+        <button type="button" id="toggleAxisControls" class="toggle-btn">Ajustar eixos</button>
+        <div id="axisControlsPanel" style="display:none; margin-top:8px; padding:12px 16px; background:var(--panel); border:1px solid var(--panel-border); border-radius:8px;"></div>
+      </div>
       <div class="profile-strip">
         <div class="block"><h4>θᵥ potencial virtual (K)</h4><div class="chart-h"><canvas id="chartTheta"></canvas></div></div>
         <div class="block"><h4>Humitat relativa (%)</h4><div class="chart-h"><canvas id="chartRh"></canvas></div></div>
@@ -793,10 +797,10 @@ function renderDrift(){
 
 function renderAllCharts(){
   destroyCharts();
-  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)');
-  charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', { xMin:0, xMax:100 });
+  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)', 'theta');
+  charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', 'rh');
   charts.wind = makeWindChart();
-  charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', { xFloor:10, xStep:5 });
+  charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', 'rise');
   renderWaypoints();
   renderDrift();
 }
