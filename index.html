@@ -171,7 +171,7 @@
   .file-row:last-child{ border-bottom:none; }
   .file-row .fname{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
   .file-row select{ font-family:var(--font-mono); font-size:11.5px; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; width:92px; flex-shrink:0; }
-  .file-row .fstatus{ width:80px; text-align:right; flex-shrink:0; }
+  .file-row .fstatus{ max-width:150px; text-align:right; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:help; }
   .file-row .fstatus.ok{ color:var(--green); }
   .file-row .fstatus.error{ color:var(--red); }
   .file-row .fstatus.pending{ color:var(--text-dim); }
@@ -1286,10 +1286,10 @@ function renderFileList(){
         <option value="ambient" ${f.tipus==='ambient'?'selected':''}>ambient</option>
         <option value="columna" ${f.tipus==='columna'?'selected':''}>columna</option>
       </select>
-      <span class="fstatus ${f.status}">${
+      <span class="fstatus ${f.status}" title="${f.errorMsg || ''}">${
         f.status==='pending' ? 'pendent' :
         f.status==='uploading' ? 'pujant...' :
-        f.status==='ok' ? '✓ fet' : '✗ error'
+        f.status==='ok' ? '✓ fet' : '✗ ' + (f.errorMsg || 'error')
       }</span>
       <button type="button" class="removeFileBtn" data-idx="${i}" title="Treu de la llista"
         style="background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:0 2px;">✕</button>
