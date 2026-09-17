@@ -182,7 +182,6 @@ def parse_kml(text):
 
 def build_sonda_json(zip_path, incendi=None, tipus=None):
     zip_path = Path(zip_path)
-    sond_id = zip_path.stem  # p.ex. 2026-09-15_1944
 
     with zipfile.ZipFile(zip_path) as zf:
         sounding_name = _open_member(zf, ".sounding.csv")
@@ -191,6 +190,16 @@ def build_sonda_json(zip_path, incendi=None, tipus=None):
 
         if not sounding_name or not flight_name:
             raise ValueError("Falten sounding.csv o raw_flight_history.csv al zip")
+
+        # sond_id ve del nom real del .sounding.csv dins el zip (el que genera
+        # sempre el Windsond amb el mateix format), no del nom del ZIP en si
+        # -- aixi no depen de com algu hagi anomenat/canviat el nom del fitxer
+        # pujat.
+        sond_id = Path(sounding_name).name
+        for suf in (".sounding.csv",):
+            if sond_id.lower().endswith(suf):
+                sond_id = sond_id[: -len(suf)]
+                break
 
         sounding_text = zf.read(sounding_name).decode("utf-8", errors="replace")
         flight_text = zf.read(flight_name).decode("utf-8", errors="replace")
