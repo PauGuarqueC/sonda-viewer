@@ -1323,6 +1323,31 @@ document.getElementById('zipfile').addEventListener('change', (e) => {
   renderFileList();
 });
 
+async function uploadBatch(entries, incendiNom, password){
+  // Un sol POST amb totes les sondes -> un sol commit. Si tot va be,
+  // marquem totes com a 'ok' de cop.
+  entries.forEach(e => { e.status = 'uploading'; });
+  renderFileList();
+
+  const filesPayload = await Promise.all(entries.map(async e => ({
+    filename: e.file.name, tipus: e.tipus, zipBase64: await fileToBase64(e.file)
+  })));
+
+  const res = await fetch(WORKER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password, incendi: incendiNom, files: filesPayload })
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+
+  entries.forEach((e, i) => {
+    e.status = 'ok';
+    e.sondId = data.results && data.results[i] ? data.results[i].sondId : null;
+  });
+  renderFileList();
+}
+
 async function uploadOneFile(entry, incendiNom, password){
   entry.status = 'uploading';
   renderFileList();
@@ -1331,12 +1356,12 @@ async function uploadOneFile(entry, incendiNom, password){
     const res = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password, incendi: incendiNom, tipus: entry.tipus, filename: entry.file.name, zipBase64 })
+      body: JSON.stringify({ password, incendi: incendiNom, files: [{ filename: entry.file.name, tipus: entry.tipus, zipBase64 }] })
     });
     const data = await res.json().catch(() => ({}));
     if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
     entry.status = 'ok';
-    entry.sondId = data.sondId;
+    entry.sondId = data.results && data.results[0] ? data.results[0].sondId : null;
   } catch(err){
     entry.status = 'error';
     entry.errorMsg = err.message;
@@ -1397,9 +1422,19 @@ async function runUpload(entriesToRun){
   const beforeFetched = await fetchEncrypted(`data/incendis/${slug}.json.enc`);
   const beforeCipher = beforeFetched.exists ? beforeFetched.ciphertext : null;
 
-  for(const entry of entriesToRun){
-    setUploadStatus(`Pujant ${entry.file.name}...`, 'wait');
-    await uploadOneFile(entry, incendiNom, password);
+  for(const entry of entriesToRun){ entry.errorMsg = null; }
+
+  try{
+    setUploadStatus(`Pujant ${entriesToRun.length} fitxer${entriesToRun.length===1?'':'s'} en un sol commit...`, 'wait');
+    await uploadBatch(entriesToRun, incendiNom, password);
+  } catch(batchErr){
+    // La tanda sencera ha fallat (tot o res, per ser un commit atomic) ->
+    // cau a pujar-los d'un en un, per poder salvar els que sí que funcionin.
+    setUploadStatus(`La pujada conjunta ha fallat (${batchErr.message}). Provant d'un en un...`, 'wait');
+    for(const entry of entriesToRun){
+      setUploadStatus(`Pujant ${entry.file.name}...`, 'wait');
+      await uploadOneFile(entry, incendiNom, password);
+    }
   }
 
   const anyOk = pendingFiles.some(f => f.status === 'ok');
