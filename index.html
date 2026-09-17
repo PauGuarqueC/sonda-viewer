@@ -343,7 +343,7 @@
     <div class="card">
       <form id="uploadForm">
         <label>ZIP dels llançaments (pots repetir "Tria fitxers" tants cops com calgui, es van afegint)</label>
-        <input type="file" id="zipfile" accept=".zip" multiple required>
+        <input type="file" id="zipfile" accept=".zip" multiple>
 
         <label>Incendi</label>
         <input type="text" id="incendiInput" required placeholder="p.ex. Alfarràs">
@@ -1287,7 +1287,7 @@ function renderFileList(){
         <option value="columna" ${f.tipus==='columna'?'selected':''}>columna</option>
       </select>
       <span class="fstatus ${f.status}">${
-        f.status==='pending' ? '—' :
+        f.status==='pending' ? 'pendent' :
         f.status==='uploading' ? 'pujant...' :
         f.status==='ok' ? '✓ fet' : '✗ error'
       }</span>
@@ -1382,7 +1382,9 @@ async function runUpload(entriesToRun){
   const password = uploadPwInput.value.trim();
   const incendiNom = document.getElementById('incendiInput').value.trim();
   if(!password){ setUploadStatus('Cal la contrasenya de pujada (a dalt).', 'ko'); return; }
-  if(!incendiNom || !entriesToRun.length){ setUploadStatus('Falten camps obligatoris.', 'ko'); return; }
+  if(!pendingFiles.length){ setUploadStatus('Selecciona almenys un ZIP.', 'ko'); return; }
+  if(!incendiNom){ setUploadStatus('Cal el nom de l\'incendi.', 'ko'); return; }
+  if(!entriesToRun.length){ setUploadStatus('No hi ha res pendent de pujar.', 'ko'); return; }
 
   const submitBtn = document.getElementById('submitBtn');
   const retryBtn = document.getElementById('retryBtn');
