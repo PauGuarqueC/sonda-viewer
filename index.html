@@ -592,6 +592,55 @@ function parseLaunchDateTime(s){
   return new Date(`${dateMatch[0]}T${hh}:${mm}:00Z`);
 }
 
+async function queryModelHost(host, modelParam, ref, launchDt, dateStr){
+  const vars = [];
+  MODEL_LEVELS.forEach(p => {
+    vars.push(`temperature_${p}hPa`, `relative_humidity_${p}hPa`, `wind_speed_${p}hPa`, `wind_direction_${p}hPa`, `geopotential_height_${p}hPa`);
+  });
+
+  const url = `${host}/v1/forecast?latitude=${ref.launch.lat}&longitude=${ref.launch.lon}`
+    + `&hourly=${vars.join(',')}&start_date=${dateStr}&end_date=${dateStr}`
+    + `&models=${modelParam}&wind_speed_unit=ms&timezone=UTC`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+  if(data.error){ throw new Error(data.reason || 'Error desconegut'); }
+
+  const times = data.hourly.time; // ISO "YYYY-MM-DDTHH:MM"
+  const targetHour = launchDt.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+  let idx = times.findIndex(t => t.slice(0, 13) === targetHour);
+  if(idx === -1){
+    // agafa l'hora mes propera si no hi ha coincidencia exacta
+    let bestDiff = Infinity;
+    times.forEach((t, i) => {
+      const d = Math.abs(new Date(t + ':00Z') - launchDt);
+      if(d < bestDiff){ bestDiff = d; idx = i; }
+    });
+  }
+  if(idx === -1 || idx == null) throw new Error('Sense dades per aquesta hora');
+
+  const profile = [];
+  MODEL_LEVELS.forEach(p => {
+    const t = data.hourly[`temperature_${p}hPa`]?.[idx];
+    const rh = data.hourly[`relative_humidity_${p}hPa`]?.[idx];
+    const ws = data.hourly[`wind_speed_${p}hPa`]?.[idx];
+    const wd = data.hourly[`wind_direction_${p}hPa`]?.[idx];
+    const gh = data.hourly[`geopotential_height_${p}hPa`]?.[idx];
+    if(t == null || gh == null) return;
+    profile.push({
+      alt_msl_m: gh,
+      theta_v_k: thetaVFromTRhP(t, rh, p),
+      rh_pct: rh != null ? rh : null,
+      wind_speed_ms: ws != null ? ws : null,
+      wind_dir_deg: wd != null ? wd : null
+    });
+  });
+  profile.sort((a, b) => a.alt_msl_m - b.alt_msl_m);
+
+  if(!profile.length) throw new Error('Cap nivell de pressió amb dades');
+  return { profile, targetHour };
+}
+
 async function loadModelProfile(){
   const modelParam = document.getElementById('modelSelect').value;
   const statusEl = document.getElementById('modelStatus');
@@ -615,66 +664,32 @@ async function loadModelProfile(){
   const dateStr = launchDt.toISOString().slice(0, 10);
   const now = new Date();
   const daysDiff = (now - launchDt) / 86400000;
-  const host = (daysDiff >= 0 && daysDiff <= 88)
-    ? 'https://api.open-meteo.com'
-    : 'https://historical-forecast-api.open-meteo.com';
-
-  const vars = [];
-  MODEL_LEVELS.forEach(p => {
-    vars.push(`temperature_${p}hPa`, `relative_humidity_${p}hPa`, `wind_speed_${p}hPa`, `wind_direction_${p}hPa`, `geopotential_height_${p}hPa`);
-  });
-
-  const url = `${host}/v1/forecast?latitude=${ref.launch.lat}&longitude=${ref.launch.lon}`
-    + `&hourly=${vars.join(',')}&start_date=${dateStr}&end_date=${dateStr}`
-    + `&models=${modelParam}&wind_speed_unit=ms&timezone=UTC`;
+  // Nomes fem servir la previsio "en viu" per llançaments molt recents; per
+  // qualsevol altra cosa anem directes a l'arxiu historic, que es la font
+  // pensada per dades passades. Si tot i aixi la primera font triada no
+  // torna res, es prova automaticament l'altra abans de rendir-se.
+  const hosts = (daysDiff >= 0 && daysDiff <= 5)
+    ? ['https://api.open-meteo.com', 'https://historical-forecast-api.open-meteo.com']
+    : ['https://historical-forecast-api.open-meteo.com', 'https://api.open-meteo.com'];
 
   statusEl.textContent = 'Carregant...';
-  try{
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.error){ throw new Error(data.reason || 'Error desconegut'); }
-
-    const times = data.hourly.time; // ISO "YYYY-MM-DDTHH:MM"
-    const targetHour = launchDt.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
-    let idx = times.findIndex(t => t.slice(0, 13) === targetHour);
-    if(idx === -1){
-      // agafa l'hora mes propera si no hi ha coincidencia exacta
-      let bestDiff = Infinity;
-      times.forEach((t, i) => {
-        const d = Math.abs(new Date(t + ':00Z') - launchDt);
-        if(d < bestDiff){ bestDiff = d; idx = i; }
-      });
+  let lastErr = null;
+  for(const host of hosts){
+    try{
+      const { profile, targetHour } = await queryModelHost(host, modelParam, ref, launchDt, dateStr);
+      modelData = { label: MODEL_LABELS[modelParam] || modelParam, profile };
+      statusEl.textContent = `${MODEL_LABELS[modelParam]} · ${dateStr} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`;
+      renderAllCharts();
+      return;
+    } catch(err){
+      lastErr = err;
     }
-    if(idx === -1 || idx == null) throw new Error('Sense dades per aquesta hora');
-
-    const profile = [];
-    MODEL_LEVELS.forEach(p => {
-      const t = data.hourly[`temperature_${p}hPa`]?.[idx];
-      const rh = data.hourly[`relative_humidity_${p}hPa`]?.[idx];
-      const ws = data.hourly[`wind_speed_${p}hPa`]?.[idx];
-      const wd = data.hourly[`wind_direction_${p}hPa`]?.[idx];
-      const gh = data.hourly[`geopotential_height_${p}hPa`]?.[idx];
-      if(t == null || gh == null) return;
-      profile.push({
-        alt_msl_m: gh,
-        theta_v_k: thetaVFromTRhP(t, rh, p),
-        rh_pct: rh != null ? rh : null,
-        wind_speed_ms: ws != null ? ws : null,
-        wind_dir_deg: wd != null ? wd : null
-      });
-    });
-    profile.sort((a, b) => a.alt_msl_m - b.alt_msl_m);
-
-    if(!profile.length) throw new Error('Cap nivell de pressió amb dades');
-
-    modelData = { label: MODEL_LABELS[modelParam] || modelParam, profile };
-    statusEl.textContent = `${MODEL_LABELS[modelParam]} · ${dateStr} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`;
-  } catch(err){
-    modelData = null;
-    statusEl.textContent = 'Error: ' + err.message;
   }
+  modelData = null;
+  statusEl.textContent = 'Error: ' + (lastErr ? lastErr.message : 'desconegut');
   renderAllCharts();
 }
+
 
 document.getElementById('modelToggle').addEventListener('change', (e) => {
   const select = document.getElementById('modelSelect');
