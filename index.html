@@ -271,11 +271,18 @@
 
       <div class="lower">
         <div class="block">
-          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;">Deriva horitzontal — color = alçada</h3>
+          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;display:flex;align-items:center;gap:10px;">
+            Deriva horitzontal
+            <select id="driftColorBy" style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);border:1px solid var(--panel-border);border-radius:4px;padding:2px 4px;">
+              <option value="alt">color = alçada</option>
+              <option value="rise">color = velocitat d'ascens</option>
+              <option value="rh">color = humitat relativa</option>
+            </select>
+          </h3>
           <div id="driftBox" style="height:420px; border-radius:4px; overflow:hidden;"></div>
           <div class="legend" id="driftLegend" style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:8px;">
-            <span>0 m</span><div style="width:140px;height:8px;border-radius:2px;background:linear-gradient(90deg, #0d47a1, #03a9f4, #4caf50, #ffc107, #d32f2f);"></div><span id="driftLegendMax">— m</span>
-            <span style="margin-left:10px;">(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span></span>
+            <span id="driftLegendMin">0</span><div style="width:140px;height:8px;border-radius:2px;background:linear-gradient(90deg, #0d47a1, #03a9f4, #4caf50, #ffc107, #d32f2f);"></div><span id="driftLegendMax">— m</span>
+            <span id="driftLegendNote" style="margin-left:10px;">(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span></span>
           </div>
         </div>
         <div class="block">
@@ -668,7 +675,19 @@ function destroyCharts(){
   charts = {};
 }
 
-function makeMultiChart(canvasId, field, xLabel, axisKey){
+function tooltipCallbacks(unit, decimals){
+  return {
+    displayColors: true,
+    titleFont: { family: 'Roboto Mono', size: 11, weight: 'normal' },
+    bodyFont: { family: 'Roboto Mono', size: 12, weight: 'bold' },
+    callbacks: {
+      title(items){ return `${Math.round(items[0].parsed.y)} m`; },
+      label(item){ return `${item.parsed.x.toFixed(decimals)} ${unit}`; }
+    }
+  };
+}
+
+function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
   const xMin = axisMax[axisKey].min;
   const xMax = axisMax[axisKey].max;
   const yMin = axisMax.height.min;
@@ -685,12 +704,12 @@ function makeMultiChart(canvasId, field, xLabel, axisKey){
     type: 'line',
     data: { datasets },
     options: {
-      responsive:true, maintainAspectRatio:false,
+      responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
         y: { type:'linear', min:yMin, max:yMax, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
-      plugins: { legend: { display:false } }
+      plugins: { legend: { display:false }, tooltip: tooltipCallbacks(unit, decimals) }
     }
   });
 }
@@ -785,13 +804,13 @@ function makeWindChart(){
     data:{ datasets },
     plugins: [windBarbsPlugin],
     options:{
-      responsive:true, maintainAspectRatio:false,
+      responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
       scales:{
         x:{ type:'linear', min:xMin, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
         y:{ type:'linear', min:yMin, max:yMax, ticks:{display:false}, grid:{color:'#e5e5e5'} }
       },
-      plugins:{ legend:{ display:false } }
+      plugins:{ legend:{ display:false }, tooltip: tooltipCallbacks('m/s', 1) }
     }
   });
 }
@@ -809,8 +828,8 @@ function renderWaypoints(){
 
 let driftMap = null;
 
-function altColor(alt, maxAlt){
-  const t = Math.max(0, Math.min(1, alt / (maxAlt || 1)));
+function valueColor(v, minV, maxV){
+  const t = maxV > minV ? Math.max(0, Math.min(1, (v - minV) / (maxV - minV))) : 0;
   const stops = [
     [0.00,[13,71,161]],   // blau fosc
     [0.25,[3,169,244]],   // cian
@@ -822,15 +841,33 @@ function altColor(alt, maxAlt){
     const [t0,c0]=stops[i], [t1,c1]=stops[i+1];
     if(t>=t0 && t<=t1){
       const f=(t-t0)/(t1-t0);
-      const c=c0.map((v,idx)=>Math.round(v+f*(c1[idx]-v)));
+      const c=c0.map((v2,idx)=>Math.round(v2+f*(c1[idx]-v2)));
       return `rgb(${c[0]},${c[1]},${c[2]})`;
     }
   }
   return `rgb(${stops[stops.length-1][1].join(',')})`;
 }
 
+const DRIFT_COLOR_FIELDS = {
+  alt:  { profileField: null,          label: 'alçada',              unit: 'm',   decimals: 0 },
+  rise: { profileField: 'rise_speed_ms', label: "velocitat d'ascens", unit: 'm/s', decimals: 1 },
+  rh:   { profileField: 'rh_pct',        label: 'humitat relativa',   unit: '%',   decimals: 0 }
+};
+
+function nearestProfileValue(s, altMsl, field){
+  let best = null, bestDist = Infinity;
+  for(const p of s.profile){
+    if(p[field] == null || p.alt_msl_m == null) continue;
+    const d = Math.abs(p.alt_msl_m - altMsl);
+    if(d < bestDist){ bestDist = d; best = p[field]; }
+  }
+  return best;
+}
+
 function renderDrift(){
   const sondes = activeSondes();
+  const colorBy = document.getElementById('driftColorBy').value;
+  const meta = DRIFT_COLOR_FIELDS[colorBy];
 
   if(driftMap){ driftMap.remove(); driftMap = null; }
 
@@ -849,26 +886,43 @@ function renderDrift(){
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(driftMap);
 
-  let maxAlt = 0;
-  sondes.forEach(({s}) => (s.flight_path_3d || []).forEach(([,,alt]) => { if(alt > maxAlt) maxAlt = alt; }));
-  document.getElementById('driftLegendMax').textContent = Math.round(maxAlt) + ' m';
+  // Calculem el valor de color per a cada vertex del track (alcada directament
+  // del KML, o el valor de perfil mes proper per alcada si es un altre camp).
+  const sondeValues = new Map();
+  let minV = Infinity, maxV = -Infinity;
+  sondes.forEach(({s}) => {
+    const track = s.flight_path_3d || [];
+    const vals = track.map(([,,alt]) => {
+      const v = meta.profileField ? nearestProfileValue(s, alt, meta.profileField) : alt;
+      if(v != null){ if(v < minV) minV = v; if(v > maxV) maxV = v; }
+      return v;
+    });
+    sondeValues.set(s.sond_id, vals);
+  });
+  if(!isFinite(minV)){ minV = 0; maxV = 1; }
+
+  document.getElementById('driftLegendMin').textContent = meta.decimals ? minV.toFixed(meta.decimals) : Math.round(minV);
+  document.getElementById('driftLegendMax').textContent = (meta.decimals ? maxV.toFixed(meta.decimals) : Math.round(maxV)) + ' ' + meta.unit;
+  document.getElementById('driftLegendNote').innerHTML = colorBy === 'alt'
+    ? `(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>`
+    : `(${meta.label}) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>`;
 
   sondes.forEach(({s}) => {
     const track = s.flight_path_3d;
     if(!track || !track.length) return;
+    const vals = sondeValues.get(s.sond_id);
 
-    // separem pujada (fins al pic) de baixada, perque el sentit del temps
-    // no depengui nomes del color (que per si sol es ambigu quan el track
-    // torna a passar per la mateixa zona en baixar)
     let peakIdx = 0;
     for(let i=1;i<track.length;i++){ if(track[i][2] > track[peakIdx][2]) peakIdx = i; }
 
     for(let i=1;i<track.length;i++){
-      const [lon0,lat0,alt0] = track[i-1];
-      const [lon1,lat1,alt1] = track[i];
+      const [lon0,lat0] = track[i-1];
+      const [lon1,lat1] = track[i];
+      const v1 = vals[i] != null ? vals[i] : vals[i-1];
+      if(v1 == null) continue;
       const isDescent = i > peakIdx;
       L.polyline([[lat0,lon0],[lat1,lon1]], {
-        color: altColor(alt1, maxAlt),
+        color: valueColor(v1, minV, maxV),
         weight: isDescent ? 2.5 : 3.5,
         opacity: isDescent ? 0.55 : 0.95,
         dashArray: isDescent ? '6,5' : null
@@ -894,6 +948,7 @@ function renderDrift(){
 
   driftMap.fitBounds(allPts, { padding: [20,20] });
 }
+document.getElementById('driftColorBy').addEventListener('change', renderDrift);
 
 function downloadChartsImage(){
   const ids = ['chartTheta', 'chartRh', 'chartWind', 'chartRise'];
@@ -951,10 +1006,10 @@ document.getElementById('downloadChartsBtn').addEventListener('click', downloadC
 
 function renderAllCharts(){
   destroyCharts();
-  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)', 'theta');
-  charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', 'rh');
+  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)', 'theta', 'K', 1);
+  charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', 'rh', '%', 0);
   charts.wind = makeWindChart();
-  charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', 'rise');
+  charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', 'rise', 'm/s', 1);
   renderWaypoints();
   renderDrift();
 }
