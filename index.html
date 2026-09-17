@@ -342,7 +342,7 @@
 
     <div class="card">
       <form id="uploadForm">
-        <label>ZIP dels llançaments (pots seleccionar-ne més d'un)</label>
+        <label>ZIP dels llançaments (pots repetir "Tria fitxers" tants cops com calgui, es van afegint)</label>
         <input type="file" id="zipfile" accept=".zip" multiple required>
 
         <label>Incendi</label>
@@ -1291,16 +1291,33 @@ function renderFileList(){
         f.status==='uploading' ? 'pujant...' :
         f.status==='ok' ? '✓ fet' : '✗ error'
       }</span>
+      <button type="button" class="removeFileBtn" data-idx="${i}" title="Treu de la llista"
+        style="background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:0 2px;">✕</button>
     </div>`).join('');
   el.querySelectorAll('.tipus-select').forEach(sel => {
     sel.addEventListener('change', () => { pendingFiles[+sel.dataset.idx].tipus = sel.value; });
   });
+  el.querySelectorAll('.removeFileBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      pendingFiles.splice(+btn.dataset.idx, 1);
+      renderFileList();
+    });
+  });
 }
 
 document.getElementById('zipfile').addEventListener('change', (e) => {
-  pendingFiles = Array.from(e.target.files).map(file => ({
+  const newFiles = Array.from(e.target.files).map(file => ({
     file, tipus: guessTipus(file.name), status: 'pending', sondId: null, errorMsg: null
   }));
+  // Afegeix a la llista existent en comptes de substituir-la (el selector
+  // natiu de fitxers substitueix la seva pròpia selecció cada cop que
+  // s'obre, així que aqui l'anem acumulant nosaltres). Evita duplicats
+  // exactes (mateix nom i mida).
+  newFiles.forEach(nf => {
+    const dup = pendingFiles.some(f => f.file.name === nf.file.name && f.file.size === nf.file.size);
+    if(!dup) pendingFiles.push(nf);
+  });
+  e.target.value = ''; // permet tornar a seleccionar el mateix fitxer una altra vegada si cal
   document.getElementById('retryBtn').style.display = 'none';
   setUploadStatus('', '');
   renderFileList();
