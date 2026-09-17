@@ -54,6 +54,9 @@
     background:var(--panel); color:var(--text-dim); border-radius:5px; cursor:pointer;
   }
   .toggle-btn.active{ color:var(--red); border-color:var(--red); }
+  .mini-slider{ display:flex; align-items:center; gap:6px; margin:2px 0 8px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); }
+  .mini-slider input[type=range]{ flex:1; min-width:0; height:3px; }
+  .mini-slider span:last-child{ width:38px; text-align:right; }
 
   /* ---- gate de contrasenya (visualitzacio) ---- */
   #gate{
@@ -209,18 +212,31 @@
         <h3>Perfil vertical</h3>
         <span class="hint">eix d'alçada compartit entre panells i sondes</span>
       </div>
-      <div style="margin-bottom:10px;">
-        <button type="button" id="toggleAxisControls" class="toggle-btn">Ajustar eixos</button>
-        <div id="axisControlsPanel" style="display:none; margin-top:8px; padding:12px 16px; background:var(--panel); border:1px solid var(--panel-border); border-radius:8px;"></div>
+      <div class="mini-slider" style="max-width:320px;">
+        <span>alçada max</span><input type="range" id="sliderHeight"><span id="sliderHeightVal"></span>
       </div>
       <div class="profile-strip">
-        <div class="block"><h4>θᵥ potencial virtual (K)</h4><div class="chart-h"><canvas id="chartTheta"></canvas></div></div>
-        <div class="block"><h4>Humitat relativa (%)</h4><div class="chart-h"><canvas id="chartRh"></canvas></div></div>
+        <div class="block">
+          <h4>θᵥ potencial virtual (K)</h4>
+          <div class="mini-slider"><span>max</span><input type="range" id="sliderTheta"><span id="sliderThetaVal"></span></div>
+          <div class="chart-h"><canvas id="chartTheta"></canvas></div>
+        </div>
+        <div class="block">
+          <h4>Humitat relativa (%)</h4>
+          <div class="mini-slider"><span>max</span><input type="range" id="sliderRh" min="10" max="100" step="5"><span id="sliderRhVal"></span></div>
+          <div class="chart-h"><canvas id="chartRh"></canvas></div>
+        </div>
         <div class="block">
           <h4>Vent — velocitat i direcció</h4>
+          <div class="mini-slider"><span>max</span><input type="range" id="sliderWind"><span id="sliderWindVal"></span></div>
           <div class="chart-h"><canvas id="chartWind"></canvas></div>
+          <div class="wind-note" id="windNote"></div>
         </div>
-        <div class="block"><h4>Velocitat d'ascens (m/s)</h4><div class="chart-h"><canvas id="chartRise"></canvas></div></div>
+        <div class="block">
+          <h4>Velocitat d'ascens (m/s)</h4>
+          <div class="mini-slider"><span>max</span><input type="range" id="sliderRise"><span id="sliderRiseVal"></span></div>
+          <div class="chart-h"><canvas id="chartRise"></canvas></div>
+        </div>
       </div>
 
       <div class="lower">
@@ -285,7 +301,7 @@
 const OWNER = "PauGuarqueC";
 const REPO = "sonda-viewer";
 const BRANCH = "main";
-const WORKER_URL = "https://sonda-upload-proxy.pguarque.workers.dev";
+const WORKER_URL = "https://sonda-upload-proxy.YOUR-SUBDOMAIN.workers.dev";
 
 // ============================================================
 // Router (navegacio per hash, sense recarregar la pagina)
@@ -469,6 +485,8 @@ document.getElementById('toggleMapView').addEventListener('click', () => {
 // ============================================================
 let INCENDI = null;
 let activeIds = new Set();
+let axisMax = { theta: null, rh: 100, wind: null, rise: null };
+let axisDataDefault = {};
 let charts = {};
 const COLORS = { ambient: ['#2f6fa8', '#5a9bd4'], columna: ['#C8102E', '#e2536c'] };
 const DASH = [[], [6,3], [2,2], [8,2,2,2]];
@@ -501,22 +519,61 @@ async function openIncendi(slug){
 
   INCENDI = data;
   activeIds = new Set(INCENDI.sondes.map(s => s.sond_id));
+  setupAxisSliders();
   buildSidebar();
   renderAllCharts();
 }
 
-function maxHeightAll(){
-  let max = 0;
-  activeSondes().forEach(({s}) => s.profile.forEach(p => { if(p.alt_msl_m > max) max = p.alt_msl_m; }));
-  return Math.ceil(Math.max(max, 1000) / 500) * 500;
+function fieldMaxAll(field){
+  // Sempre sobre TOTES les sondes de l'incendi (no nomes les actives), perque
+  // els eixos no saltin en marcar/desmarcar sondes al lateral.
+  let mx = 0;
+  INCENDI.sondes.forEach(s => s.profile.forEach(p => { if(p[field] != null && p[field] > mx) mx = p[field]; }));
+  return mx;
 }
 
-function minHeightAll(){
-  let min = Infinity;
-  activeSondes().forEach(({s}) => s.profile.forEach(p => { if(p.alt_msl_m < min) min = p.alt_msl_m; }));
-  if(!isFinite(min)) min = 0;
-  return Math.floor(min / 100) * 100;
+function fieldMinAll(field){
+  let mn = Infinity;
+  INCENDI.sondes.forEach(s => s.profile.forEach(p => { if(p[field] != null && p[field] < mn) mn = p[field]; }));
+  return isFinite(mn) ? mn : 0;
 }
+
+function setupAxisSliders(){
+  const heightMax = Math.ceil(Math.max(fieldMaxAll('alt_msl_m'), 1000) / 500) * 500;
+  const thetaMin = Math.floor(fieldMinAll('theta_v_k') / 2) * 2;
+  const thetaMax = Math.ceil(Math.max(fieldMaxAll('theta_v_k'), thetaMin + 10) / 2) * 2;
+  const windMax = Math.max(14, Math.ceil(fieldMaxAll('wind_speed_ms') / 2) * 2);
+  const riseMax = Math.max(10, Math.ceil(fieldMaxAll('rise_speed_ms') / 5) * 5);
+
+  axisDataDefault = { height: heightMax, thetaMin, theta: thetaMax, rh: 100, wind: windMax, rise: riseMax };
+  axisMax = { height: heightMax, theta: thetaMax, rh: 100, wind: windMax, rise: riseMax };
+
+  configureSlider('sliderHeight', 'sliderHeightVal', 500, heightMax, 100, heightMax);
+  configureSlider('sliderTheta', 'sliderThetaVal', thetaMin + 4, thetaMax, 2, thetaMax);
+  configureSlider('sliderRh', 'sliderRhVal', 10, 100, 5, 100);
+  configureSlider('sliderWind', 'sliderWindVal', 5, windMax, 1, windMax);
+  configureSlider('sliderRise', 'sliderRiseVal', 2, riseMax, 1, riseMax);
+}
+
+function configureSlider(inputId, valId, min, max, step, value){
+  const input = document.getElementById(inputId);
+  input.min = min; input.max = max; input.step = step; input.value = value;
+  document.getElementById(valId).textContent = value;
+}
+
+function wireAxisSlider(inputId, valId, key){
+  const input = document.getElementById(inputId);
+  input.addEventListener('input', () => {
+    axisMax[key] = parseFloat(input.value);
+    document.getElementById(valId).textContent = input.value;
+    renderAllCharts();
+  });
+}
+wireAxisSlider('sliderHeight', 'sliderHeightVal', 'height');
+wireAxisSlider('sliderTheta', 'sliderThetaVal', 'theta');
+wireAxisSlider('sliderRh', 'sliderRhVal', 'rh');
+wireAxisSlider('sliderWind', 'sliderWindVal', 'wind');
+wireAxisSlider('sliderRise', 'sliderRiseVal', 'rise');
 
 function buildSidebar(){
   document.getElementById('incendiName').textContent = INCENDI.incendi || '—';
@@ -557,32 +614,16 @@ function destroyCharts(){
   charts = {};
 }
 
-function dataMaxFor(field){
-  let max = 0;
-  activeSondes().forEach(({s}) => {
-    s.profile.forEach(p => { if(p[field] != null && p[field] > max) max = p[field]; });
-  });
-  return max;
-}
-
-function makeMultiChart(canvasId, field, xLabel, opts){
-  opts = opts || {};
-  const maxH = maxHeightAll();
+function makeMultiChart(canvasId, field, xLabel, axisKey){
+  const xMin = axisKey === 'theta' ? axisDataDefault.thetaMin : 0;
+  const xMax = axisMax[axisKey];
+  const yMax = axisMax.height;
   const datasets = activeSondes().map(({s, color, dash}) => ({
     label: s.sond_id,
     data: s.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.alt_msl_m})),
     borderColor: color, backgroundColor: 'transparent',
     borderWidth: 2, borderDash: dash, pointRadius: 0, tension: 0.15, parsing: false
   }));
-
-  let xMin = opts.xMin != null ? opts.xMin : undefined;
-  let xMax = opts.xMax != null ? opts.xMax : undefined;
-  if(opts.xFloor != null){
-    // eix comença sempre a 0 i arriba com a minim a xFloor; s'ampliar si les dades el superen
-    xMin = 0;
-    const dMax = dataMaxFor(field);
-    xMax = Math.max(opts.xFloor, Math.ceil(dMax / opts.xStep || 1) * (opts.xStep || 1));
-  }
 
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {
@@ -592,7 +633,7 @@ function makeMultiChart(canvasId, field, xLabel, opts){
       responsive:true, maintainAspectRatio:false,
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y: { type:'linear', min:0, max:maxH, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
+        y: { type:'linear', min:0, max:yMax, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins: { legend: { display:false } }
     }
@@ -670,11 +711,10 @@ const windBarbsPlugin = {
 };
 
 function makeWindChart(){
-  const maxH = maxHeightAll();
   const sondes = activeSondes();
-  const dMax = dataMaxFor('wind_speed_ms');
-  const xMax = Math.max(14, Math.ceil(dMax / 2) * 2);
-  const arrowX = xMax * 0.88;
+  const xMax = axisMax.wind;
+  const yMax = axisMax.height;
+  const arrowX = xMax * 0.88; // columna fixa a la dreta, no sobre la linia
 
   const datasets = sondes.map(({s, color, dash}) => ({
     type: 'line', label: s.sond_id,
@@ -689,10 +729,10 @@ function makeWindChart(){
     plugins: [windBarbsPlugin],
     options:{
       responsive:true, maintainAspectRatio:false,
-      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 10 },
+      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
       scales:{
         x:{ type:'linear', min:0, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} },
-        y:{ type:'linear', min:0, max:maxH, ticks:{display:false}, grid:{color:'#e5e5e5'} }
+        y:{ type:'linear', min:0, max:yMax, ticks:{display:false}, grid:{color:'#e5e5e5'} }
       },
       plugins:{ legend:{ display:false } }
     }
@@ -715,11 +755,11 @@ let driftMap = null;
 function altColor(alt, maxAlt){
   const t = Math.max(0, Math.min(1, alt / (maxAlt || 1)));
   const stops = [
-    [0.00,[13,71,161]],
-    [0.25,[3,169,244]],
-    [0.50,[76,175,80]],
-    [0.75,[255,193,7]],
-    [1.00,[211,47,47]]
+    [0.00,[13,71,161]],   // blau fosc
+    [0.25,[3,169,244]],   // cian
+    [0.50,[76,175,80]],   // verd
+    [0.75,[255,193,7]],   // groc/ambre
+    [1.00,[211,47,47]]    // vermell
   ];
   for(let i=0;i<stops.length-1;i++){
     const [t0,c0]=stops[i], [t1,c1]=stops[i+1];
@@ -760,6 +800,9 @@ function renderDrift(){
     const track = s.flight_path_3d;
     if(!track || !track.length) return;
 
+    // separem pujada (fins al pic) de baixada, perque el sentit del temps
+    // no depengui nomes del color (que per si sol es ambigu quan el track
+    // torna a passar per la mateixa zona en baixar)
     let peakIdx = 0;
     for(let i=1;i<track.length;i++){ if(track[i][2] > track[peakIdx][2]) peakIdx = i; }
 
