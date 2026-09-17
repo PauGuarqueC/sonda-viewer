@@ -916,6 +916,34 @@ function tooltipCallbacks(unit, decimals){
   };
 }
 
+function verticalRefLinePlugin(xValue, label, color){
+  return {
+    id: 'refLine',
+    afterDraw(chart){
+      const xScale = chart.scales.x, yScale = chart.scales.y;
+      if(xValue < xScale.min || xValue > xScale.max) return; // fora de rang, no la dibuixem
+      const xPix = xScale.getPixelForValue(xValue);
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.strokeStyle = color || '#999';
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xPix, yScale.top);
+      ctx.lineTo(xPix, yScale.bottom);
+      ctx.stroke();
+      if(label){
+        ctx.setLineDash([]);
+        ctx.fillStyle = color || '#999';
+        ctx.font = '10px "Roboto Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, xPix, yScale.top - 4);
+      }
+      ctx.restore();
+    }
+  };
+}
+
 function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
   const xMin = axisMax[axisKey].min;
   const xMax = axisMax[axisKey].max;
@@ -943,6 +971,7 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
   return new Chart(ctx, {
     type: 'line',
     data: { datasets },
+    plugins: axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : [],
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
       scales: {
