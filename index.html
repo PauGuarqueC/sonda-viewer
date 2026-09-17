@@ -1375,7 +1375,7 @@ async function waitForProcessingAndJump(slug, beforeCipher){
   let stableCount = 0;
   for(let i = 0; i < maxAttempts; i++){
     await new Promise(r => setTimeout(r, 5000));
-    setUploadStatus(`Processant amb GitHub Actions... (${i+1}/${maxAttempts})`, 'wait');
+    setUploadStatus(`Processant dades... (${i+1}/${maxAttempts})`, 'wait');
     const fetched = await fetchEncrypted(`data/incendis/${slug}.json.enc`);
     const current = fetched.exists ? fetched.ciphertext : null;
     if(current && current !== beforeCipher){
@@ -1425,7 +1425,7 @@ async function runUpload(entriesToRun){
   for(const entry of entriesToRun){ entry.errorMsg = null; }
 
   try{
-    setUploadStatus(`Pujant ${entriesToRun.length} fitxer${entriesToRun.length===1?'':'s'} en un sol commit...`, 'wait');
+    setUploadStatus('Pujant fitxers...', 'wait');
     await uploadBatch(entriesToRun, incendiNom, password);
   } catch(batchErr){
     // La tanda sencera ha fallat (tot o res, per ser un commit atomic) ->
