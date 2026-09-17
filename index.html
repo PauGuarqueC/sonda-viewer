@@ -164,6 +164,17 @@
     color:#fff; font-size:14px; font-weight:500; cursor:pointer;
   }
   .card button:disabled{ background:#c9a6ac; cursor:default; }
+  .file-row{
+    display:flex; align-items:center; gap:8px; padding:7px 0;
+    border-bottom:1px dashed var(--panel-border); font-family:var(--font-mono); font-size:12px;
+  }
+  .file-row:last-child{ border-bottom:none; }
+  .file-row .fname{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
+  .file-row select{ font-family:var(--font-mono); font-size:11.5px; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; width:92px; flex-shrink:0; }
+  .file-row .fstatus{ width:80px; text-align:right; flex-shrink:0; }
+  .file-row .fstatus.ok{ color:var(--green); }
+  .file-row .fstatus.error{ color:var(--red); }
+  .file-row .fstatus.pending{ color:var(--text-dim); }
   .status{ font-family:var(--font-mono); font-size:12.5px; padding:10px 12px; border-radius:5px; margin-top:14px; line-height:1.5; white-space:pre-wrap; }
   .status.ok{ background:var(--green-bg); color:var(--green); }
   .status.ko{ background:var(--red-bg); color:var(--red); }
@@ -331,19 +342,16 @@
 
     <div class="card">
       <form id="uploadForm">
-        <label>ZIP del llançament</label>
-        <input type="file" id="zipfile" accept=".zip" required>
+        <label>ZIP dels llançaments (pots seleccionar-ne més d'un)</label>
+        <input type="file" id="zipfile" accept=".zip" multiple required>
 
         <label>Incendi</label>
         <input type="text" id="incendiInput" required placeholder="p.ex. Alfarràs">
 
-        <label>Tipus de sonda</label>
-        <select id="tipus" required>
-          <option value="ambient">ambient</option>
-          <option value="columna">columna</option>
-        </select>
+        <div id="fileList" style="margin-top:14px;"></div>
 
         <button type="submit" id="submitBtn">Puja i processa</button>
+        <button type="button" id="retryBtn" style="display:none; background:transparent; color:var(--red); border:1px solid var(--red); margin-left:8px;">Reintenta els fallits</button>
       </form>
       <div id="uploadStatus"></div>
     </div>
@@ -1261,44 +1269,145 @@ function fileToBase64(file){
   });
 }
 
-document.getElementById('uploadForm').addEventListener('submit', async (ev) => {
-  ev.preventDefault();
-  const password = uploadPwInput.value.trim();
-  if(!password){ setUploadStatus('Cal la contrasenya de pujada (a dalt).', 'ko'); return; }
+// ---- llista de fitxers seleccionats, amb tipus i estat individual ----
+let pendingFiles = []; // [{file, tipus, status: 'pending'|'uploading'|'ok'|'error', sondId, errorMsg}]
 
-  const fileInput = document.getElementById('zipfile');
-  const file = fileInput.files[0];
-  const incendiNom = document.getElementById('incendiInput').value.trim();
-  const tipus = document.getElementById('tipus').value;
+function guessTipus(filename){
+  return /column/i.test(filename) ? 'columna' : 'ambient';
+}
 
-  if(!file || !incendiNom){ setUploadStatus('Falten camps obligatoris.', 'ko'); return; }
+function renderFileList(){
+  const el = document.getElementById('fileList');
+  if(!pendingFiles.length){ el.innerHTML = ''; return; }
+  el.innerHTML = pendingFiles.map((f, i) => `
+    <div class="file-row">
+      <span class="fname" title="${f.file.name}">${f.file.name}</span>
+      <select data-idx="${i}" class="tipus-select" ${f.status==='ok' ? 'disabled' : ''}>
+        <option value="ambient" ${f.tipus==='ambient'?'selected':''}>ambient</option>
+        <option value="columna" ${f.tipus==='columna'?'selected':''}>columna</option>
+      </select>
+      <span class="fstatus ${f.status}">${
+        f.status==='pending' ? '—' :
+        f.status==='uploading' ? 'pujant...' :
+        f.status==='ok' ? '✓ fet' : '✗ error'
+      }</span>
+    </div>`).join('');
+  el.querySelectorAll('.tipus-select').forEach(sel => {
+    sel.addEventListener('change', () => { pendingFiles[+sel.dataset.idx].tipus = sel.value; });
+  });
+}
 
-  const submitBtn = document.getElementById('submitBtn');
-  submitBtn.disabled = true;
-  setUploadStatus('Pujant el ZIP...', 'wait');
+document.getElementById('zipfile').addEventListener('change', (e) => {
+  pendingFiles = Array.from(e.target.files).map(file => ({
+    file, tipus: guessTipus(file.name), status: 'pending', sondId: null, errorMsg: null
+  }));
+  document.getElementById('retryBtn').style.display = 'none';
+  setUploadStatus('', '');
+  renderFileList();
+});
 
+async function uploadOneFile(entry, incendiNom, password){
+  entry.status = 'uploading';
+  renderFileList();
   try{
-    const zipBase64 = await fileToBase64(file);
+    const zipBase64 = await fileToBase64(entry.file);
     const res = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password, incendi: incendiNom, tipus, filename: file.name, zipBase64 })
+      body: JSON.stringify({ password, incendi: incendiNom, tipus: entry.tipus, filename: entry.file.name, zipBase64 })
     });
     const data = await res.json().catch(() => ({}));
     if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
-
-    setUploadStatus(
-      `Fet! "${incendiNom}" / ${data.sondId} pujat.\n` +
-      `GitHub Actions el processarà en un minut o dos.\n` +
-      `Comprova'l a: https://github.com/${OWNER}/${REPO}/actions`,
-      'ok'
-    );
-    document.getElementById('uploadForm').reset();
+    entry.status = 'ok';
+    entry.sondId = data.sondId;
   } catch(err){
-    setUploadStatus('Error: ' + err.message, 'ko');
-  } finally {
-    submitBtn.disabled = false;
+    entry.status = 'error';
+    entry.errorMsg = err.message;
   }
+  renderFileList();
+}
+
+async function waitForProcessingAndJump(slug, beforeCipher){
+  const maxAttempts = 24; // ~2 minuts
+  let lastCipher = beforeCipher;
+  let stableCount = 0;
+  for(let i = 0; i < maxAttempts; i++){
+    await new Promise(r => setTimeout(r, 5000));
+    setUploadStatus(`Processant amb GitHub Actions... (${i+1}/${maxAttempts})`, 'wait');
+    const fetched = await fetchEncrypted(`data/incendis/${slug}.json.enc`);
+    const current = fetched.exists ? fetched.ciphertext : null;
+    if(current && current !== beforeCipher){
+      if(current === lastCipher){
+        stableCount++;
+        if(stableCount >= 1){
+          setUploadStatus('Fet! Obrint l\'incendi...', 'ok');
+          location.hash = '#/incendi/' + slug;
+          return;
+        }
+      } else {
+        stableCount = 0;
+      }
+      lastCipher = current;
+    }
+  }
+  setUploadStatus(
+    'Encara no s\'ha completat el processament (pot trigar una mica més amb moltes sondes de cop). ' +
+    `Comprova-ho a https://github.com/${OWNER}/${REPO}/actions, o `,
+    'wait'
+  );
+  const link = document.createElement('a');
+  link.href = '#/incendi/' + slug;
+  link.textContent = 'ves a l\'incendi ara mateix';
+  document.getElementById('uploadStatus').appendChild(link);
+}
+
+async function runUpload(entriesToRun){
+  const password = uploadPwInput.value.trim();
+  const incendiNom = document.getElementById('incendiInput').value.trim();
+  if(!password){ setUploadStatus('Cal la contrasenya de pujada (a dalt).', 'ko'); return; }
+  if(!incendiNom || !entriesToRun.length){ setUploadStatus('Falten camps obligatoris.', 'ko'); return; }
+
+  const submitBtn = document.getElementById('submitBtn');
+  const retryBtn = document.getElementById('retryBtn');
+  submitBtn.disabled = true;
+  retryBtn.style.display = 'none';
+
+  // instantania de com estava l'incendi ABANS, per saber quan la Action ha actualitzat res
+  const slug = incendiNom.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'incendi';
+  const beforeFetched = await fetchEncrypted(`data/incendis/${slug}.json.enc`);
+  const beforeCipher = beforeFetched.exists ? beforeFetched.ciphertext : null;
+
+  for(const entry of entriesToRun){
+    setUploadStatus(`Pujant ${entry.file.name}...`, 'wait');
+    await uploadOneFile(entry, incendiNom, password);
+  }
+
+  const anyOk = pendingFiles.some(f => f.status === 'ok');
+  const anyError = pendingFiles.some(f => f.status === 'error');
+
+  submitBtn.disabled = false;
+  retryBtn.style.display = anyError ? 'inline-block' : 'none';
+
+  if(!anyOk){
+    setUploadStatus('Cap fitxer s\'ha pogut pujar. Revisa els errors de la llista i reintenta.', 'ko');
+    return;
+  }
+
+  if(anyError){
+    setUploadStatus(`${pendingFiles.filter(f=>f.status==='ok').length} pujades, però alguna ha fallat — reintenta-la abans de continuar si cal.`, 'wait');
+  }
+
+  await waitForProcessingAndJump(slug, beforeCipher);
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  await runUpload(pendingFiles.filter(f => f.status !== 'ok'));
+});
+
+document.getElementById('retryBtn').addEventListener('click', async () => {
+  await runUpload(pendingFiles.filter(f => f.status === 'error'));
 });
 
 // ============================================================
