@@ -221,6 +221,19 @@
         Ambient en tons blau-verdosos, columna en tons vermell-taronjats.
         Amb més d'una sonda activa del mateix tipus, cada una porta un to diferent.
       </div>
+
+      <div class="sidebar-note" style="border-top:1px solid var(--panel-border); margin-top:14px; padding-top:12px;">
+        <label style="display:flex; align-items:center; gap:6px; font-weight:500; color:var(--text);">
+          <input type="checkbox" id="modelToggle">
+          Afegeix perfil de model
+        </label>
+        <select id="modelSelect" style="width:100%; margin-top:6px; font-family:var(--font-mono); font-size:11px; padding:4px; border:1px solid var(--panel-border); border-radius:4px; display:none;">
+          <option value="icon_eu">ICON-EU</option>
+          <option value="meteofrance_arome_france">AROME França</option>
+          <option value="ecmwf_ifs025">ECMWF IFS (0.25°)</option>
+        </select>
+        <div id="modelStatus" style="margin-top:6px; font-size:10.5px;"></div>
+      </div>
     </div>
 
     <div id="incendiContent">
@@ -528,6 +541,142 @@ document.getElementById('toggleMapView').addEventListener('click', () => {
 // ============================================================
 let INCENDI = null;
 let activeIds = new Set();
+
+// ============================================================
+// Perfil de model (Open-Meteo) — opcional, per superposar quan
+// no hi ha sonda ambient (o simplement per comparar).
+// ============================================================
+let modelData = null; // { label, profile: [{alt_msl_m, theta_v_k, rh_pct, wind_speed_ms, wind_dir_deg}] }
+
+const MODEL_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100];
+const MODEL_LABELS = { icon_eu: 'ICON-EU', meteofrance_arome_france: 'AROME França', ecmwf_ifs025: 'ECMWF IFS (0.25°)' };
+
+function thetaVFromTRhP(tempC, rhPct, pressureHpa){
+  if(tempC == null || rhPct == null || pressureHpa == null || pressureHpa <= 0) return null;
+  const tK = tempC + 273.15;
+  const theta = tK * Math.pow(1000 / pressureHpa, 0.286);
+  const es = 6.112 * Math.exp((17.67 * tempC) / (tempC + 243.5));
+  const e = es * (rhPct / 100);
+  const denom = pressureHpa - e;
+  const w = denom > 0 ? 0.622 * e / denom : 0;
+  return theta * (1 + 0.61 * w);
+}
+
+function getModelReferenceSonde(){
+  const active = activeSondes();
+  if(!active.length) return null;
+  const columna = active.find(a => a.s.tipus === 'columna');
+  return (columna || active[0]).s;
+}
+
+function parseLaunchDateTime(s){
+  const dateMatch = s.sond_id.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!dateMatch) return null;
+  const timeMatch = (s.launch_time_utc || '00:00:00').match(/^(\d{2}):(\d{2})/);
+  const hh = timeMatch ? timeMatch[1] : '00';
+  const mm = timeMatch ? timeMatch[2] : '00';
+  return new Date(`${dateMatch[0]}T${hh}:${mm}:00Z`);
+}
+
+async function loadModelProfile(){
+  const modelParam = document.getElementById('modelSelect').value;
+  const statusEl = document.getElementById('modelStatus');
+  const ref = getModelReferenceSonde();
+
+  if(!ref || !ref.launch){
+    statusEl.textContent = 'Cap sonda activa amb punt de llançament conegut.';
+    modelData = null;
+    renderAllCharts();
+    return;
+  }
+
+  const launchDt = parseLaunchDateTime(ref);
+  if(!launchDt || isNaN(launchDt)){
+    statusEl.textContent = 'No s\'ha pogut determinar la data/hora de llançament.';
+    modelData = null;
+    renderAllCharts();
+    return;
+  }
+
+  const dateStr = launchDt.toISOString().slice(0, 10);
+  const now = new Date();
+  const daysDiff = (now - launchDt) / 86400000;
+  const host = (daysDiff >= 0 && daysDiff <= 88)
+    ? 'https://api.open-meteo.com'
+    : 'https://historical-forecast-api.open-meteo.com';
+
+  const vars = [];
+  MODEL_LEVELS.forEach(p => {
+    vars.push(`temperature_${p}hPa`, `relative_humidity_${p}hPa`, `wind_speed_${p}hPa`, `wind_direction_${p}hPa`, `geopotential_height_${p}hPa`);
+  });
+
+  const url = `${host}/v1/forecast?latitude=${ref.launch.lat}&longitude=${ref.launch.lon}`
+    + `&hourly=${vars.join(',')}&start_date=${dateStr}&end_date=${dateStr}`
+    + `&models=${modelParam}&wind_speed_unit=ms&timezone=UTC`;
+
+  statusEl.textContent = 'Carregant...';
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.error){ throw new Error(data.reason || 'Error desconegut'); }
+
+    const times = data.hourly.time; // ISO "YYYY-MM-DDTHH:MM"
+    const targetHour = launchDt.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+    let idx = times.findIndex(t => t.slice(0, 13) === targetHour);
+    if(idx === -1){
+      // agafa l'hora mes propera si no hi ha coincidencia exacta
+      let bestDiff = Infinity;
+      times.forEach((t, i) => {
+        const d = Math.abs(new Date(t + ':00Z') - launchDt);
+        if(d < bestDiff){ bestDiff = d; idx = i; }
+      });
+    }
+    if(idx === -1 || idx == null) throw new Error('Sense dades per aquesta hora');
+
+    const profile = [];
+    MODEL_LEVELS.forEach(p => {
+      const t = data.hourly[`temperature_${p}hPa`]?.[idx];
+      const rh = data.hourly[`relative_humidity_${p}hPa`]?.[idx];
+      const ws = data.hourly[`wind_speed_${p}hPa`]?.[idx];
+      const wd = data.hourly[`wind_direction_${p}hPa`]?.[idx];
+      const gh = data.hourly[`geopotential_height_${p}hPa`]?.[idx];
+      if(t == null || gh == null) return;
+      profile.push({
+        alt_msl_m: gh,
+        theta_v_k: thetaVFromTRhP(t, rh, p),
+        rh_pct: rh != null ? rh : null,
+        wind_speed_ms: ws != null ? ws : null,
+        wind_dir_deg: wd != null ? wd : null
+      });
+    });
+    profile.sort((a, b) => a.alt_msl_m - b.alt_msl_m);
+
+    if(!profile.length) throw new Error('Cap nivell de pressió amb dades');
+
+    modelData = { label: MODEL_LABELS[modelParam] || modelParam, profile };
+    statusEl.textContent = `${MODEL_LABELS[modelParam]} · ${dateStr} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`;
+  } catch(err){
+    modelData = null;
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+  renderAllCharts();
+}
+
+document.getElementById('modelToggle').addEventListener('change', (e) => {
+  const select = document.getElementById('modelSelect');
+  select.style.display = e.target.checked ? 'block' : 'none';
+  if(e.target.checked){
+    loadModelProfile();
+  } else {
+    modelData = null;
+    document.getElementById('modelStatus').textContent = '';
+    renderAllCharts();
+  }
+});
+document.getElementById('modelSelect').addEventListener('change', () => {
+  if(document.getElementById('modelToggle').checked) loadModelProfile();
+});
+
 let axisMax = { theta: null, rh: 100, wind: null, rise: null };
 let axisDataDefault = {};
 let charts = {};
@@ -555,6 +704,10 @@ async function openIncendi(slug){
   INCENDI = null;
   document.getElementById('incendiName').textContent = '…';
   document.getElementById('sondaList').innerHTML = '';
+  modelData = null;
+  document.getElementById('modelToggle').checked = false;
+  document.getElementById('modelSelect').style.display = 'none';
+  document.getElementById('modelStatus').textContent = '';
 
   const fetched = await fetchEncrypted('data/incendis/' + slug + '.json.enc');
   if(!fetched.exists){
@@ -707,6 +860,17 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
     borderColor: color, backgroundColor: 'transparent',
     borderWidth: 2, borderDash: dash, pointRadius: 0, tension: 0.15, parsing: false
   }));
+  if(modelData){
+    const mdata = modelData.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.alt_msl_m}));
+    if(mdata.length){
+      datasets.push({
+        label: `model (${modelData.label})`,
+        data: mdata,
+        borderColor: '#888888', backgroundColor: 'transparent',
+        borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.15, parsing: false
+      });
+    }
+  }
 
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {
@@ -806,6 +970,17 @@ function makeWindChart(){
     data: s.profile.filter(p=>p.wind_speed_ms!=null).map(p=>({x:p.wind_speed_ms, y:p.alt_msl_m})),
     borderColor: color, backgroundColor:'transparent', borderWidth:2, borderDash: dash, pointRadius:0, tension:0.15, parsing:false
   }));
+  if(modelData){
+    const mdata = modelData.profile.filter(p => p.wind_speed_ms != null).map(p => ({x: p.wind_speed_ms, y: p.alt_msl_m}));
+    if(mdata.length){
+      datasets.push({
+        type: 'line', label: `model (${modelData.label})`,
+        data: mdata,
+        borderColor: '#888888', backgroundColor: 'transparent',
+        borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.15, parsing: false
+      });
+    }
+  }
 
   const ctx = document.getElementById('chartWind').getContext('2d');
   return new Chart(ctx, {
