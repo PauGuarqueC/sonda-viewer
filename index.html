@@ -217,8 +217,8 @@
       <h3>Sondes d'aquest incendi</h3>
       <div id="sondaList"></div>
       <div class="sidebar-note">
-        Ambient en blau, columna en vermell. Amb més d'una sonda activa del mateix tipus,
-        cada una es distingeix per traç (continu / discontinu).
+        Ambient en tons blau-verdosos, columna en tons vermell-taronjats.
+        Amb més d'una sonda activa del mateix tipus, cada una porta un to diferent.
       </div>
     </div>
 
@@ -280,8 +280,8 @@
             </select>
           </h3>
           <div id="driftBox" style="height:420px; border-radius:4px; overflow:hidden;"></div>
-          <div class="legend" id="driftLegend" style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:8px;">
-            <span id="driftLegendMin">0</span><div style="width:140px;height:8px;border-radius:2px;background:linear-gradient(90deg, #0d47a1, #03a9f4, #4caf50, #ffc107, #d32f2f);"></div><span id="driftLegendMax">— m</span>
+          <div class="legend" id="driftLegend" style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:8px;flex-wrap:wrap;">
+            <span id="driftLegendMin">0</span><div id="driftLegendBar" style="width:140px;height:8px;border-radius:2px;display:flex;overflow:hidden;background:linear-gradient(90deg, #0d47a1, #03a9f4, #4caf50, #ffc107, #d32f2f);"></div><span id="driftLegendMax">— m</span>
             <span id="driftLegendNote" style="margin-left:10px;">(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span></span>
           </div>
         </div>
@@ -525,8 +525,11 @@ let activeIds = new Set();
 let axisMax = { theta: null, rh: 100, wind: null, rise: null };
 let axisDataDefault = {};
 let charts = {};
-const COLORS = { ambient: ['#2f6fa8', '#5a9bd4'], columna: ['#C8102E', '#e2536c'] };
-const DASH = [[], [6,3], [2,2], [8,2,2,2]];
+const COLORS = {
+  ambient: ['#2f6fa8', '#3d8fa5', '#2e8b74', '#1f5c8a', '#4ba88f', '#5a9bd4', '#1a7a6e'],
+  columna: ['#C8102E', '#d9772e', '#e2536c', '#b8451f', '#c9541f', '#e0483a', '#96001f']
+};
+const DASH = [[]];
 
 function sondaLabel(sondId){
   // Nomes la part data+hora del nom del .sounding (p.ex. "2026-09-15_1944"),
@@ -677,7 +680,7 @@ function destroyCharts(){
 
 function tooltipCallbacks(unit, decimals){
   return {
-    displayColors: true,
+    displayColors: false,
     titleFont: { family: 'Roboto Mono', size: 11, weight: 'normal' },
     bodyFont: { family: 'Roboto Mono', size: 12, weight: 'bold' },
     callbacks: {
@@ -828,7 +831,7 @@ function renderWaypoints(){
 
 let driftMap = null;
 
-function valueColor(v, minV, maxV){
+function valueColorContinuous(v, minV, maxV){
   const t = maxV > minV ? Math.max(0, Math.min(1, (v - minV) / (maxV - minV))) : 0;
   const stops = [
     [0.00,[13,71,161]],   // blau fosc
@@ -848,10 +851,26 @@ function valueColor(v, minV, maxV){
   return `rgb(${stops[stops.length-1][1].join(',')})`;
 }
 
+function valueColorBinned(v, bounds, colors){
+  for(let i=0;i<bounds.length-1;i++){
+    if(v >= bounds[i] && v < bounds[i+1]) return colors[i];
+  }
+  // per sota del primer o per sobre de l'ultim: satura al color extrem
+  return v < bounds[0] ? colors[0] : colors[colors.length-1];
+}
+
+const RISE_BOUNDS = [-10, -4, -2, 0, 1, 2, 4, 7, 10, 14, 18];
+const RISE_COLORS = ['dimgrey', 'darkgrey', 'lightgrey', 'green', 'yellow', 'orange', 'red', 'violet', 'darkorchid', 'indigo'];
+const RH_BOUNDS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const RH_COLORS = ['red', 'orange', 'yellow', 'lightgreen', 'limegreen', 'forestgreen', 'darkslategrey', 'cornflowerblue', 'blue', 'darkblue'];
+
 const DRIFT_COLOR_FIELDS = {
-  alt:  { profileField: null,          label: 'alçada',              unit: 'm',   decimals: 0 },
-  rise: { profileField: 'rise_speed_ms', label: "velocitat d'ascens", unit: 'm/s', decimals: 1 },
-  rh:   { profileField: 'rh_pct',        label: 'humitat relativa',   unit: '%',   decimals: 0 }
+  alt:  { profileField: null,            label: 'alçada',              unit: 'm',   decimals: 0,
+          color: (v, minV, maxV) => valueColorContinuous(v, minV, maxV) },
+  rise: { profileField: 'rise_speed_ms', label: "velocitat d'ascens", unit: 'm/s', decimals: 1,
+          color: (v) => valueColorBinned(v, RISE_BOUNDS, RISE_COLORS), bounds: RISE_BOUNDS, colors: RISE_COLORS },
+  rh:   { profileField: 'rh_pct',        label: 'humitat relativa',   unit: '%',   decimals: 0,
+          color: (v) => valueColorBinned(v, RH_BOUNDS, RH_COLORS), bounds: RH_BOUNDS, colors: RH_COLORS }
 };
 
 function nearestProfileValue(s, altMsl, field){
@@ -901,11 +920,24 @@ function renderDrift(){
   });
   if(!isFinite(minV)){ minV = 0; maxV = 1; }
 
-  document.getElementById('driftLegendMin').textContent = meta.decimals ? minV.toFixed(meta.decimals) : Math.round(minV);
-  document.getElementById('driftLegendMax').textContent = (meta.decimals ? maxV.toFixed(meta.decimals) : Math.round(maxV)) + ' ' + meta.unit;
+  if(colorBy === 'alt'){
+    document.getElementById('driftLegendMin').textContent = Math.round(minV);
+    document.getElementById('driftLegendMax').textContent = Math.round(maxV) + ' ' + meta.unit;
+    document.getElementById('driftLegendBar').style.background = 'linear-gradient(90deg, #0d47a1, #03a9f4, #4caf50, #ffc107, #d32f2f)';
+    document.getElementById('driftLegendBar').innerHTML = '';
+  } else {
+    // llegenda per trams (mateixos colors/llindars que el codi Python)
+    document.getElementById('driftLegendMin').textContent = '';
+    document.getElementById('driftLegendMax').textContent = '';
+    const bar = document.getElementById('driftLegendBar');
+    bar.style.background = 'none';
+    bar.innerHTML = meta.bounds.slice(0, -1).map((b, i) =>
+      `<div title="${b} – ${meta.bounds[i+1]}" style="flex:1;background:${meta.colors[i]};height:100%;"></div>`
+    ).join('');
+  }
   document.getElementById('driftLegendNote').innerHTML = colorBy === 'alt'
     ? `(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>`
-    : `(${meta.label}) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>`;
+    : `${meta.bounds[0]}–${meta.bounds[meta.bounds.length-1]} ${meta.unit} (${meta.label}) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>`;
 
   sondes.forEach(({s}) => {
     const track = s.flight_path_3d;
@@ -922,7 +954,7 @@ function renderDrift(){
       if(v1 == null) continue;
       const isDescent = i > peakIdx;
       L.polyline([[lat0,lon0],[lat1,lon1]], {
-        color: valueColor(v1, minV, maxV),
+        color: meta.color(v1, minV, maxV),
         weight: isDescent ? 2.5 : 3.5,
         opacity: isDescent ? 0.55 : 0.95,
         dashArray: isDescent ? '6,5' : null
