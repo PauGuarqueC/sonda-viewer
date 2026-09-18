@@ -211,6 +211,16 @@
       <button type="button" id="toggleListView" class="toggle-btn active">Llista</button>
       <button type="button" id="toggleMapView" class="toggle-btn">Mapa</button>
     </div>
+    <div id="listFilters" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; font-family:var(--font-mono); font-size:12px;">
+      <input type="text" id="filterText" placeholder="cerca per nom..." style="flex:1; min-width:160px; padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:12px;">
+      <select id="filterAny" style="padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:12px;">
+        <option value="">tots els anys</option>
+      </select>
+      <label style="display:flex; align-items:center; gap:5px; color:var(--text-dim); white-space:nowrap;">
+        <input type="checkbox" id="filterAmbient"> nomes amb ambient
+      </label>
+      <span id="filterCount" style="color:var(--text-dim); margin-left:auto;"></span>
+    </div>
     <div id="fireList"></div>
     <div id="fireMap" style="display:none; height:480px; border-radius:8px; overflow:hidden; border:1px solid var(--panel-border);"></div>
     <div id="listEmpty" style="display:none;"></div>
@@ -488,27 +498,69 @@ async function openList(){
 }
 
 function renderList(items){
+  lastListItems = items;
+  populateYearFilter(items);
+  applyFilters();
+}
+
+function populateYearFilter(items){
+  const sel = document.getElementById('filterAny');
+  const current = sel.value;
+  const anys = Array.from(new Set(items.map(it => it.any).filter(Boolean))).sort().reverse();
+  sel.innerHTML = '<option value="">tots els anys</option>' + anys.map(a => `<option value="${a}">${a}</option>`).join('');
+  if(anys.includes(current)) sel.value = current;
+}
+
+function applyFilters(){
+  const text = document.getElementById('filterText').value.trim().toLowerCase();
+  const any = document.getElementById('filterAny').value;
+  const nomesAmbient = document.getElementById('filterAmbient').checked;
+
+  const filtered = lastListItems.filter(it => {
+    if(text && !it.nom.toLowerCase().includes(text)) return false;
+    if(any && it.any !== any) return false;
+    if(nomesAmbient && !it.te_ambient) return false;
+    return true;
+  });
+
   const list = document.getElementById('fireList');
   const empty = document.getElementById('listEmpty');
-  if(!items.length){
+  const countEl = document.getElementById('filterCount');
+
+  countEl.textContent = lastListItems.length
+    ? `${filtered.length} de ${lastListItems.length} incendi${lastListItems.length===1?'':'s'}`
+    : '';
+
+  if(!lastListItems.length){
     empty.textContent = 'Encara no hi ha cap incendi registrat.';
     empty.style.display = 'block';
     list.innerHTML = '';
     document.getElementById('fireMap').innerHTML = '';
     return;
   }
-  empty.style.display = 'none';
-  list.innerHTML = items.map(it => `
-    <a class="fire-card" href="#/incendi/${encodeURIComponent(it.slug)}">
-      <h2>${it.nom}</h2>
-      <span class="meta">${it.n_sondes} sond${it.n_sondes===1?'a':'es'} · actualitzat ${it.actualitzat || '—'}</span>
-    </a>`).join('');
+  if(!filtered.length){
+    empty.textContent = 'Cap incendi coincideix amb els filtres.';
+    empty.style.display = 'block';
+    list.innerHTML = '';
+  } else {
+    empty.style.display = 'none';
+    list.innerHTML = filtered.map(it => `
+      <a class="fire-card" href="#/incendi/${encodeURIComponent(it.slug)}">
+        <h2>${it.nom}</h2>
+        <span class="meta">${it.n_sondes} sond${it.n_sondes===1?'a':'es'}${it.te_ambient ? ' · ambient' : ''} · actualitzat ${it.actualitzat || '—'}</span>
+      </a>`).join('');
+  }
 
-  lastListItems = items;
   if(document.getElementById('toggleMapView').classList.contains('active')){
-    renderFireMap(items);
+    renderFireMap(filtered);
   }
 }
+
+['input','change'].forEach(evt => {
+  document.getElementById('filterText').addEventListener(evt, applyFilters);
+  document.getElementById('filterAny').addEventListener(evt, applyFilters);
+  document.getElementById('filterAmbient').addEventListener(evt, applyFilters);
+});
 
 let fireListMap = null;
 let lastListItems = [];
@@ -530,7 +582,7 @@ function renderFireMap(items){
 
   withCoords.forEach(it => {
     L.marker([it.lat, it.lon]).addTo(fireListMap)
-      .bindPopup(`<b>${it.nom}</b><br>${it.n_sondes} sonda${it.n_sondes===1?'':'es'}<br><a href="#/incendi/${encodeURIComponent(it.slug)}">obrir →</a>`);
+      .bindPopup(`<b>${it.nom}</b><br>${it.n_sondes} sond${it.n_sondes===1?'a':'es'}<br><a href="#/incendi/${encodeURIComponent(it.slug)}">obrir →</a>`);
   });
   fireListMap.fitBounds(withCoords.map(it => [it.lat, it.lon]), { padding:[30,30], maxZoom: 11 });
 }
@@ -546,7 +598,7 @@ document.getElementById('toggleMapView').addEventListener('click', () => {
   document.getElementById('toggleListView').classList.remove('active');
   document.getElementById('fireList').style.display = 'none';
   document.getElementById('fireMap').style.display = 'block';
-  renderFireMap(lastListItems);
+  applyFilters();
 });
 
 // ============================================================
