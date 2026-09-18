@@ -1427,24 +1427,29 @@ function moistAdiabatT(T0C, P0, targetP){
   return T - 273.15;
 }
 
+// Pendent del biaix: graus C que es desplaça l'eix de temperatures d'un
+// cap a l'altre del gràfic (de PMAX a PMIN). Es fixe (no depèn del rang de
+// dades) perquè el "warping" sigui consistent visualment i perquè l'eix X
+// es pugui ajustar al rang real de les dades (igual que fa el Y), en lloc
+// de deixar marges buits a banda i banda com passava abans.
+const SKEW_DEG = 70;
+
 function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, marginBottom, marginRight){
   const plotW = width - marginLeft - marginRight;
   const plotH = height - marginBottom - 20;
   const lnPmax = Math.log(pMax), lnPmin = Math.log(pMin);
 
   const toY = (p) => 20 + plotH * (Math.log(p) - lnPmin) / (lnPmax - lnPmin);
-  const skewPerPixelUp = (tMax - tMin) / plotH * 1.1; // pendent del "biaix": com mes amunt, mes cap a la dreta
-  const toX = (tC, p) => {
-    const y = toY(p);
-    const yBottom = 20 + plotH;
-    const xBase = marginLeft + (tC - tMin) / (tMax - tMin) * plotW;
-    return xBase + skewPerPixelUp * (yBottom - y);
-  };
-  return { toX, toY, plotW, plotH, marginLeft, marginBottom };
+  // "warped" = temperatura desplaçada segons l'alçada (biaix), en graus C.
+  // A PMAX (base del gràfic) el biaix és 0; a PMIN (cim) és SKEW_DEG.
+  const warp = (p) => SKEW_DEG * (lnPmax - Math.log(p)) / (lnPmax - lnPmin);
+  const toX = (tC, p) => marginLeft + (tC + warp(p) - tMin) / (tMax - tMin) * plotW;
+  return { toX, toY, warp, plotW, plotH, marginLeft, marginBottom };
 }
 
 function computeSkewTRanges(sondes){
   let pMin = Infinity, pMax = -Infinity, tMin = Infinity, tMax = -Infinity;
+  let warpedMin = Infinity, warpedMax = -Infinity;
   sondes.forEach(({s}) => {
     (s.profile || []).forEach(p => {
       if(p.pressure_mb != null){
@@ -1465,9 +1470,40 @@ function computeSkewTRanges(sondes){
   // marges per llegibilitat, arrodonits a valors "bonics"
   const PMAX = Math.ceil(pMax / 50) * 50;
   const PMIN = Math.max(50, Math.floor(pMin / 50) * 50 - 50);
-  const TMIN = Math.floor((tMin - 5) / 5) * 5;
-  const TMAX = Math.ceil((tMax + 5) / 5) * 5;
-  return { PMIN, PMAX, TMIN, TMAX };
+
+  // Per triar l'escala de l'eix X (TMIN/TMAX, en graus "warped") calculem el
+  // rang que ocupa cada punt real un cop aplicat el biaix segons la seva
+  // pressió -- així l'eix X també s'ajusta ("zoom") al traçat real, igual
+  // que fa el Y, en lloc de dependre nomes del rang brut de temperatures
+  // (que deixava molt de marge buit a banda i banda a causa del biaix).
+  const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
+  const warpAt = (p) => SKEW_DEG * (lnPmax - Math.log(p)) / (lnPmax - lnPmin);
+  sondes.forEach(({s}) => {
+    (s.profile || []).forEach(p => {
+      if(p.pressure_mb == null) return;
+      const w = warpAt(p.pressure_mb);
+      if(p.temp_c != null){
+        const wt = p.temp_c + w;
+        if(wt < warpedMin) warpedMin = wt;
+        if(wt > warpedMax) warpedMax = wt;
+      }
+      const td = dewpointC(p.temp_c, p.rh_pct);
+      if(td != null){
+        const wtd = td + w;
+        if(wtd < warpedMin) warpedMin = wtd;
+      }
+    });
+  });
+  if(!isFinite(warpedMin)){ warpedMin = tMin; warpedMax = tMax + SKEW_DEG; }
+
+  const TMIN = Math.floor((warpedMin - 5) / 5) * 5;
+  const TMAX = Math.ceil((warpedMax + 5) / 5) * 5;
+  // RTMIN/RTMAX: rang de temperatures REALS (sense biaix) -- serveix per
+  // decidir quines isotermes de fons dibuixar/etiquetar (valors físics),
+  // mentre que TMIN/TMAX (warped) defineixen l'escala de píxels de l'eix X.
+  const RTMIN = Math.floor((tMin - 5) / 5) * 5;
+  const RTMAX = Math.ceil((tMax + 5) / 5) * 5;
+  return { PMIN, PMAX, TMIN, TMAX, RTMIN, RTMAX };
 }
 
 function renderSkewT(){
@@ -1491,7 +1527,7 @@ function renderSkewT(){
     .filter(Boolean)
     .map(s => ({ s, color: allSondaColors[s.sond_id] || '#333' }));
 
-  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(sondes);
+  const { PMIN, PMAX, TMIN, TMAX, RTMIN, RTMAX } = computeSkewTRanges(sondes);
   const marginLeft = 34, marginBottom = 26;
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
   const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom, barbZoneWidth);
@@ -1518,7 +1554,7 @@ function renderSkewT(){
 
   // --- isotermes (esbiaixades) ---
   ctx.strokeStyle = '#e5cfc0';
-  for(let t = TMIN - 30; t <= TMAX + 30; t += 10){
+  for(let t = RTMIN - 10; t <= RTMAX + 10; t += 10){
     ctx.beginPath();
     let started = false;
     for(let p = PMAX; p >= PMIN; p -= 20){
@@ -1609,7 +1645,7 @@ function renderSkewT(){
 
   // --- etiquetes de les isotermes (fora de la caixa, a sota) ---
   ctx.fillStyle = '#c99a7c'; ctx.textAlign = 'center';
-  for(let t = Math.ceil(TMIN / 10) * 10; t <= TMAX; t += 10){
+  for(let t = Math.ceil(RTMIN / 10) * 10; t <= RTMAX; t += 10){
     ctx.fillText(String(t), toX(t, PMAX), plotBottom + 12);
   }
 
