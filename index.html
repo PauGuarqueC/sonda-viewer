@@ -239,6 +239,7 @@
     <div id="sidebar">
       <h3>Sondes d'aquest incendi</h3>
       <div id="sondaList"></div>
+      <div id="editStatus" style="font-family:var(--font-mono); font-size:11px; color:var(--text-dim); min-height:14px; margin-top:4px;"></div>
       <div class="sidebar-note">
         Ambient en tons blau-verdosos, columna en tons vermell-taronjats.
         Amb més d'una sonda activa del mateix tipus, cada una porta un to diferent.
@@ -911,6 +912,23 @@ function buildSidebar(){
   });
 }
 
+async function waitForIncendiUpdate(slug, beforeCipher){
+  const statusEl = document.getElementById('editStatus');
+  const maxAttempts = 20; // fins ~1 minut
+  for(let i = 0; i < maxAttempts; i++){
+    statusEl.textContent = `Actualitzant... (${i+1}/${maxAttempts})`;
+    await new Promise(r => setTimeout(r, 3000));
+    const fetched = await fetchEncrypted(`data/incendis/${slug}.json.enc`);
+    const current = fetched.exists ? fetched.ciphertext : null;
+    if(current && current !== beforeCipher){
+      statusEl.textContent = '';
+      return true;
+    }
+  }
+  statusEl.textContent = 'Encara no s\'ha publicat el canvi — prova de tornar-hi d\'aquí una estona.';
+  return false;
+}
+
 async function editSondaTipus(sondId, newTipus, selectEl){
   const sondaBefore = INCENDI.sondes.find(s => s.sond_id === sondId);
   const previousTipus = sondaBefore ? sondaBefore.tipus : null;
@@ -923,6 +941,9 @@ async function editSondaTipus(sondId, newTipus, selectEl){
 
   selectEl.disabled = true;
   try{
+    const beforeFetched = await fetchEncrypted(`data/incendis/${currentSlug}.json.enc`);
+    const beforeCipher = beforeFetched.exists ? beforeFetched.ciphertext : null;
+
     const res = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -930,8 +951,10 @@ async function editSondaTipus(sondId, newTipus, selectEl){
     });
     const data = await res.json().catch(() => ({}));
     if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
-    // recarreguem l'incendi sencer perque els colors (que depenen de quantes
-    // sondes hi ha de cada tipus) es recalculin be arreu
+    // esperem que Github Pages publiqui de veritat el commit nou abans de
+    // tornar a carregar, si no la primera consulta encara pot rebre el
+    // fitxer vell tot i haver desat el canvi correctament
+    await waitForIncendiUpdate(currentSlug, beforeCipher);
     await openIncendi(currentSlug);
   } catch(err){
     alert('No s\'ha pogut canviar el tipus: ' + err.message);
@@ -959,6 +982,9 @@ async function editSondaElevation(sondId, newValueStr, inputEl){
 
   inputEl.disabled = true;
   try{
+    const beforeFetched = await fetchEncrypted(`data/incendis/${currentSlug}.json.enc`);
+    const beforeCipher = beforeFetched.exists ? beforeFetched.ciphertext : null;
+
     const res = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -966,8 +992,10 @@ async function editSondaElevation(sondId, newValueStr, inputEl){
     });
     const data = await res.json().catch(() => ({}));
     if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
-    // recarreguem l'incendi sencer: l'offset afecta tot el perfil, el track
-    // del mapa i els eixos, no nomes aquest input
+    // esperem que Github Pages publiqui de veritat el commit nou abans de
+    // tornar a carregar (l'offset afecta tot el perfil, el track del mapa
+    // i els eixos)
+    await waitForIncendiUpdate(currentSlug, beforeCipher);
     await openIncendi(currentSlug);
   } catch(err){
     alert('No s\'ha pogut corregir l\'alçada: ' + err.message);
