@@ -1443,31 +1443,56 @@ function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, m
   return { toX, toY, plotW, plotH, marginLeft, marginBottom };
 }
 
-function computeSkewTRanges(sondes){
-  let pMin = Infinity, pMax = -Infinity, tMin = Infinity, tMax = -Infinity;
+function computeSkewTRanges(sondes, plotW, plotH){
+  let pMin = Infinity, pMax = -Infinity;
+  const pts = []; // { tC, p } de cada mostra real (temperatura i punt de rosada)
   sondes.forEach(({s}) => {
     (s.profile || []).forEach(p => {
-      if(p.pressure_mb != null){
-        if(p.pressure_mb < pMin) pMin = p.pressure_mb;
-        if(p.pressure_mb > pMax) pMax = p.pressure_mb;
-      }
-      if(p.temp_c != null){
-        if(p.temp_c < tMin) tMin = p.temp_c;
-        if(p.temp_c > tMax) tMax = p.temp_c;
-      }
+      if(p.pressure_mb == null) return;
+      if(p.pressure_mb < pMin) pMin = p.pressure_mb;
+      if(p.pressure_mb > pMax) pMax = p.pressure_mb;
+      if(p.temp_c != null) pts.push({ tC: p.temp_c, p: p.pressure_mb });
       const td = dewpointC(p.temp_c, p.rh_pct);
-      if(td != null && td < tMin) tMin = td;
+      if(td != null) pts.push({ tC: td, p: p.pressure_mb });
     });
   });
   if(!isFinite(pMin)){ pMin = 300; pMax = 1000; }
-  if(!isFinite(tMin)){ tMin = -20; tMax = 40; }
 
   // marges per llegibilitat, arrodonits a valors "bonics"
   const PMAX = Math.ceil(pMax / 50) * 50;
   const PMIN = Math.max(50, Math.floor(pMin / 50) * 50 - 50);
-  const TMIN = Math.floor((tMin - 5) / 5) * 5;
-  const TMAX = Math.ceil((tMax + 5) / 5) * 5;
-  return { PMIN, PMAX, TMIN, TMAX };
+
+  if(!pts.length){
+    return { PMIN, PMAX, TMIN: -20, TMAX: 40 };
+  }
+
+  // La transformacio de dibuix (makeSkewTTransform, sense tocar) desplaça
+  // cada punt cap a la dreta en pujar, proporcionalment a (TMAX-TMIN). Com
+  // que TMIN/TMAX depenen alhora d'aquest mateix biaix, ho resolem per
+  // iteracio: a cada volta calculem on cauria realment cada punt (temp. i
+  // punt de rosada) amb el rang actual, i n'ajustem els limits perque el
+  // punt mes extrem (allà on sigui, en alçada) quedi vora el marge del
+  // gràfic -- en lloc d'agafar el valor en brut, que quedava despenjat
+  // del traçat real un cop aplicat el biaix (l'eix es veia sempre massa
+  // ample, amb marges buits, perque el mínim/màxim reals solen ser en
+  // alçada, no a la base, on s'etiqueta l'eix).
+  const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
+  const fp = (p) => (lnPmax - Math.log(p)) / (lnPmax - lnPmin); // 0 a la base, 1 al cim
+  const rawTs = pts.map(pt => pt.tC);
+  let TMIN = Math.min(...rawTs), TMAX = Math.max(...rawTs);
+  for(let iter = 0; iter < 8; iter++){
+    const D = Math.max(5, TMAX - TMIN);
+    const pxPerDeg = plotW / D;
+    const screenT = pts.map(pt => pt.tC + (1.1 * D * fp(pt.p)) / pxPerDeg);
+    TMIN = Math.min(...screenT);
+    TMAX = Math.max(...screenT);
+  }
+
+  // marge petit i fix en píxels als dos costats (no "graus arrodonits a 5",
+  // que amb l'ajust ja tan ajustat tornaria a deixar un buit gran)
+  const D = Math.max(5, TMAX - TMIN);
+  const padDeg = (8 / plotW) * D;
+  return { PMIN, PMAX, TMIN: TMIN - padDeg, TMAX: TMAX + padDeg };
 }
 
 function renderSkewT(){
@@ -1491,9 +1516,10 @@ function renderSkewT(){
     .filter(Boolean)
     .map(s => ({ s, color: allSondaColors[s.sond_id] || '#333' }));
 
-  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(sondes);
   const marginLeft = 34, marginBottom = 26;
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
+  const plotWForRanges = width - marginLeft - barbZoneWidth, plotHForRanges = height - marginBottom - 20;
+  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(sondes, plotWForRanges, plotHForRanges);
   const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom, barbZoneWidth);
   const plotRight = width - barbZoneWidth;
   const plotBottom = height - marginBottom;
