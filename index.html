@@ -1488,10 +1488,11 @@ function computeSkewTRanges(sondes, plotW, plotH){
     TMAX = Math.max(...screenT);
   }
 
-  // marge petit i fix en píxels als dos costats (no "graus arrodonits a 5",
-  // que amb l'ajust ja tan ajustat tornaria a deixar un buit gran)
+  // marge fix en píxels als dos costats, perquè el traçat no quedi enganxat
+  // a la vora del quadre (no "graus arrodonits a 5", que amb l'ajust ja tan
+  // ajustat tornaria a deixar un buit gran com abans)
   const D = Math.max(5, TMAX - TMIN);
-  const padDeg = (8 / plotW) * D;
+  const padDeg = (28 / plotW) * D;
   return { PMIN, PMAX, TMIN: TMIN - padDeg, TMAX: TMAX + padDeg };
 }
 
