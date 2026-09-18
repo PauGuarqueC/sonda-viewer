@@ -1050,6 +1050,8 @@ function computeABLh(s){
   const RI_CRIT = 0.25;
   const G = 9.81;
   const MIN_SPEED = 0.5; // evita dividir per gairebe-zero a tocar de superficie
+  const MIN_ABLH_AGL = 150; // per sota d'aixo, amb vent fluix es mes probable
+                             // que sigui soroll del metode que una capa real
 
   const riAt = (p) => {
     const dz = p.height_agl_m - sfc.height_agl_m;
@@ -1066,6 +1068,8 @@ function computeABLh(s){
       const prev = profile[i - 1];
       const frac = (ri === riPrev) ? 0 : (RI_CRIT - riPrev) / (ri - riPrev);
       const clampedFrac = Math.max(0, Math.min(1, frac));
+      const heightAgl = prev.height_agl_m + clampedFrac * (profile[i].height_agl_m - prev.height_agl_m);
+      if(heightAgl < MIN_ABLH_AGL) return null; // massa a tocar de terra, probablement soroll
       return prev.alt_msl_m + clampedFrac * (profile[i].alt_msl_m - prev.alt_msl_m);
     }
     riPrev = ri;
