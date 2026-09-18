@@ -1443,6 +1443,33 @@ function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, m
   return { toX, toY, plotW, plotH, marginLeft, marginBottom };
 }
 
+function computeSkewTRanges(sondes){
+  let pMin = Infinity, pMax = -Infinity, tMin = Infinity, tMax = -Infinity;
+  sondes.forEach(({s}) => {
+    (s.profile || []).forEach(p => {
+      if(p.pressure_mb != null){
+        if(p.pressure_mb < pMin) pMin = p.pressure_mb;
+        if(p.pressure_mb > pMax) pMax = p.pressure_mb;
+      }
+      if(p.temp_c != null){
+        if(p.temp_c < tMin) tMin = p.temp_c;
+        if(p.temp_c > tMax) tMax = p.temp_c;
+      }
+      const td = dewpointC(p.temp_c, p.rh_pct);
+      if(td != null && td < tMin) tMin = td;
+    });
+  });
+  if(!isFinite(pMin)){ pMin = 300; pMax = 1000; }
+  if(!isFinite(tMin)){ tMin = -20; tMax = 40; }
+
+  // marges per llegibilitat, arrodonits a valors "bonics"
+  const PMAX = Math.ceil(pMax / 50) * 50;
+  const PMIN = Math.max(50, Math.floor(pMin / 50) * 50 - 50);
+  const TMIN = Math.floor((tMin - 5) / 5) * 5;
+  const TMAX = Math.ceil((tMax + 5) / 5) * 5;
+  return { PMIN, PMAX, TMIN, TMAX };
+}
+
 function renderSkewT(){
   const canvas = document.getElementById('skewtCanvas');
   const box = document.getElementById('skewtBox');
@@ -1464,39 +1491,41 @@ function renderSkewT(){
     .filter(Boolean)
     .map(s => ({ s, color: allSondaColors[s.sond_id] || '#333' }));
 
-  const PMAX = 1000, PMIN = 100, TMIN = -40, TMAX = 45;
+  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(sondes);
   const marginLeft = 34, marginBottom = 26;
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
   const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom, barbZoneWidth);
   const plotRight = width - barbZoneWidth;
+  const plotBottom = height - marginBottom;
 
   ctx.font = '9px "Roboto Mono", monospace';
 
+  // Tot el que es dibuixa entre save()/restore() amb clip() queda tallat
+  // exactament a la caixa -- cap adiabata ni isoterma pot sortir-ne, sigui
+  // quin sigui el rang de pressio/temperatura escollit.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(marginLeft, 20, plotRight - marginLeft, plotBottom - 20);
+  ctx.clip();
+
   // --- isobars ---
-  const STD_LEVELS = [1000, 850, 700, 500, 400, 300, 250, 200, 150, 100];
-  ctx.strokeStyle = '#ddd'; ctx.fillStyle = '#888'; ctx.lineWidth = 1;
-  STD_LEVELS.forEach(p => {
+  const isobarStep = (PMAX - PMIN) > 500 ? 100 : 50;
+  ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1;
+  for(let p = PMAX; p >= PMIN; p -= isobarStep){
     const y = toY(p);
     ctx.beginPath(); ctx.moveTo(marginLeft, y); ctx.lineTo(plotRight, y); ctx.stroke();
-    ctx.textAlign = 'right';
-    ctx.fillText(String(p), marginLeft - 4, y + 3);
-  });
+  }
 
   // --- isotermes (esbiaixades) ---
   ctx.strokeStyle = '#e5cfc0';
-  for(let t = -80; t <= 60; t += 10){
+  for(let t = TMIN - 30; t <= TMAX + 30; t += 10){
     ctx.beginPath();
     let started = false;
     for(let p = PMAX; p >= PMIN; p -= 20){
       const x = toX(t, p), y = toY(p);
-      if(x < marginLeft - 40 || x > plotRight + 40) continue;
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
-    if(t >= TMIN && t <= TMAX){
-      ctx.fillStyle = '#c99a7c'; ctx.textAlign = 'center';
-      ctx.fillText(String(t), toX(t, PMAX), height - marginBottom + 12);
-    }
   }
 
   // --- adiabates seques ---
@@ -1507,7 +1536,6 @@ function renderSkewT(){
     for(let p = PMAX; p >= PMIN; p -= 20){
       const tC = theta * Math.pow(p / 1000, 0.286) - 273.15;
       const x = toX(tC, p), y = toY(p);
-      if(x < marginLeft - 60 || x > plotRight + 60){ started = false; continue; }
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -1515,13 +1543,12 @@ function renderSkewT(){
 
   // --- adiabates saturades (humides) ---
   ctx.strokeStyle = '#bcd9c4';
-  [-20, -10, 0, 5, 10, 15, 20, 25, 30].forEach(t0 => {
+  [-20, -10, 0, 5, 10, 15, 20, 25, 30, 35, 40].forEach(t0 => {
     ctx.beginPath();
     let started = false;
     for(let p = PMAX; p >= PMIN; p -= 40){
       const tC = moistAdiabatT(t0, PMAX, p);
       const x = toX(tC, p), y = toY(p);
-      if(x < marginLeft - 60 || x > plotRight + 60){ started = false; continue; }
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -1533,24 +1560,19 @@ function renderSkewT(){
   [1, 2, 4, 7, 10, 16, 24].forEach(w => {
     ctx.beginPath();
     let started = false;
-    for(let p = PMAX; p >= 300; p -= 40){
+    for(let p = PMAX; p >= PMIN; p -= 40){
       const e = (w / 1000) * p / (0.622 + w / 1000);
       const lnE = Math.log(e / 6.112);
       const tC = (243.5 * lnE) / (17.67 - lnE);
       const x = toX(tC, p), y = toY(p);
-      if(x < marginLeft - 20 || x > plotRight + 20){ started = false; continue; }
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
   });
   ctx.setLineDash([]);
 
-  // --- vora del quadre ---
-  ctx.strokeStyle = '#999';
-  ctx.strokeRect(marginLeft, 20, plotRight - marginLeft, height - marginBottom - 20);
-
-  const barbColX = plotRight + 12; // franja reservada a la dreta de la caixa, mai s'encavalca amb les dades
-  sondes.forEach(({s, color}, sIdx) => {
+  // --- dades: T continu, Td discontinu ---
+  sondes.forEach(({s, color}) => {
     const pts = (s.profile || [])
       .filter(p => p.pressure_mb != null && p.temp_c != null)
       .sort((a, b) => b.pressure_mb - a.pressure_mb);
@@ -1575,13 +1597,37 @@ function renderSkewT(){
     });
     ctx.stroke();
     ctx.setLineDash([]);
+  });
 
-    // --- barbes de vent, una columna per sonda, espaiades per pressio ---
+  ctx.restore(); // ------- fi del retallat: tota la resta (etiquetes, vora, barbes) es dibuixa sense clip -------
+
+  // --- etiquetes dels isobars (fora de la caixa, a l'esquerra) ---
+  ctx.fillStyle = '#888'; ctx.font = '9px "Roboto Mono", monospace'; ctx.textAlign = 'right';
+  for(let p = PMAX; p >= PMIN; p -= isobarStep){
+    ctx.fillText(String(p), marginLeft - 4, toY(p) + 3);
+  }
+
+  // --- etiquetes de les isotermes (fora de la caixa, a sota) ---
+  ctx.fillStyle = '#c99a7c'; ctx.textAlign = 'center';
+  for(let t = Math.ceil(TMIN / 10) * 10; t <= TMAX; t += 10){
+    ctx.fillText(String(t), toX(t, PMAX), plotBottom + 12);
+  }
+
+  // --- vora del quadre ---
+  ctx.strokeStyle = '#999';
+  ctx.strokeRect(marginLeft, 20, plotRight - marginLeft, plotBottom - 20);
+
+  // --- barbes de vent, una columna per sonda, a la franja reservada ---
+  const barbColX = plotRight + 12;
+  sondes.forEach(({s, color}, sIdx) => {
+    const pts = (s.profile || [])
+      .filter(p => p.pressure_mb != null && p.wind_speed_ms != null && p.wind_dir_deg != null)
+      .sort((a, b) => b.pressure_mb - a.pressure_mb);
     const barbX = barbColX + sIdx * 20;
-    const windPts = pts.filter(p => p.wind_speed_ms != null && p.wind_dir_deg != null);
     let lastY = -Infinity;
-    for(const p of windPts){
+    for(const p of pts){
       const y = toY(p.pressure_mb);
+      if(y < 20 || y > plotBottom) continue;
       if(Math.abs(y - lastY) < 16) continue; // evita amuntegar barbes massa juntes
       drawWindBarb(ctx, barbX, y, p.wind_speed_ms, p.wind_dir_deg, color);
       lastY = y;
@@ -1600,6 +1646,7 @@ function renderSkewT(){
     ly += 14;
   });
 }
+
 
 let driftMap = null;
 
