@@ -24,36 +24,6 @@ from pathlib import Path
 
 from merge_sonda import build_sonda_json
 from crypto_utils import encrypt_str, decrypt_str, decrypt_bytes
-from fetch_era5 import fetch_era5_profile
-
-ERA5_MIN_AGE_DAYS = 6  # marge de seguretat per sobre del retard tipic d'ERA5T (~5 dies)
-
-
-def maybe_attach_era5(sonda_data):
-    """Si la sonda ja te prou dies (ERA5 hauria d'estar disponible), demana
-    el perfil al CDS i l'enganxa a sonda_data['era5_profile']. No fa fallar
-    el proces si el CDS no respon be -- simplement es queda sense ERA5."""
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", sonda_data["sond_id"])
-    if not m:
-        return
-    launch_date = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=timezone.utc)
-    age_days = (datetime.now(timezone.utc) - launch_date).days
-    if age_days < ERA5_MIN_AGE_DAYS:
-        return
-    if not sonda_data.get("launch"):
-        return
-
-    hh_match = re.match(r"^(\d{2}):", sonda_data.get("launch_time_utc") or "")
-    hour = int(hh_match.group(1)) if hh_match else 12
-
-    try:
-        sonda_data["era5_profile"] = fetch_era5_profile(
-            sonda_data["launch"]["lat"], sonda_data["launch"]["lon"],
-            f"{m.group(1)}-{m.group(2)}-{m.group(3)}", hour
-        )
-        print(f"    [ok] ERA5 obtingut per {sonda_data['sond_id']}")
-    except Exception as exc:  # noqa: BLE001
-        print(f"    [avis] ERA5 no disponible per {sonda_data['sond_id']}: {exc}")
 
 ROOT = Path(__file__).resolve().parent.parent
 INCOMING = ROOT / "incoming"
@@ -230,7 +200,6 @@ def main():
             if already_processed(slug, sond_id):
                 print(f"[debug] {sond_id} ja processat anteriorment, l'ignoro")
                 continue
-            maybe_attach_era5(sonda_data)
             incendi_data = update_incendi(slug, incendi_nom, sonda_data)
             processed += 1
             print(f"[ok] {incendi_nom} / {sond_id} ({sonda_data['tipus']}) processat i xifrat")
