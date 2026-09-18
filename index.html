@@ -211,16 +211,16 @@
       <button type="button" id="toggleListView" class="toggle-btn active">Llista</button>
       <button type="button" id="toggleMapView" class="toggle-btn">Mapa</button>
     </div>
-    <div id="listFilters" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; font-family:var(--font-mono); font-size:12px;">
-      <input type="text" id="filterText" placeholder="cerca per nom..." style="flex:1; min-width:160px; padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:12px;">
-      <select id="filterAny" style="padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:12px;">
+    <div id="listFilters" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:4px; font-family:var(--font-mono); font-size:11px;">
+      <input type="text" id="filterText" placeholder="cerca per nom..." style="flex:1; min-width:140px; padding:4px 7px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:11px;">
+      <select id="filterAny" style="padding:4px 6px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:11px;">
         <option value="">tots els anys</option>
       </select>
-      <label style="display:flex; align-items:center; gap:5px; color:var(--text-dim); white-space:nowrap;">
-        <input type="checkbox" id="filterAmbient"> nomes amb ambient
+      <label style="display:flex; align-items:center; gap:4px; color:var(--text-dim); white-space:nowrap;">
+        <input type="checkbox" id="filterAmbient"> té sonda ambient
       </label>
-      <span id="filterCount" style="color:var(--text-dim); margin-left:auto;"></span>
     </div>
+    <div id="filterCount" style="text-align:right; color:var(--text-dim); font-family:var(--font-mono); font-size:11px; margin:10px 0 18px;"></div>
     <div id="fireList"></div>
     <div id="fireMap" style="display:none; height:480px; border-radius:8px; overflow:hidden; border:1px solid var(--panel-border);"></div>
     <div id="listEmpty" style="display:none;"></div>
