@@ -255,6 +255,7 @@
           <option value="icon_eu">ICON-EU</option>
           <option value="meteofrance_arome_france">AROME França</option>
           <option value="ecmwf_ifs025">ECMWF IFS (0.25°)</option>
+          <option value="era5">ERA5 (CDS)</option>
         </select>
         <div id="modelStatus" style="margin-top:6px; font-size:10.5px;"></div>
       </div>
@@ -334,8 +335,8 @@
           </div>
         </div>
         <div class="block">
-          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 4px;">Punts de llançament</h3>
-          <div id="waypoints"></div>
+          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 4px;">Skew-T (fins a 2 sondes)</h3>
+          <div id="skewtBox" style="width:100%; height:480px; position:relative;"><canvas id="skewtCanvas"></canvas></div>
         </div>
       </div>
     </div>
@@ -712,6 +713,21 @@ async function loadModelProfile(){
     return;
   }
 
+  if(modelParam === 'era5'){
+    // L'ERA5 no es demana en directe: ja es va desar (si tocava) dins la
+    // propia sonda quan es va processar la pujada, perque nomes esta
+    // disponible per sondes prou antigues (retard tipic d'uns dies).
+    if(ref.era5_profile && ref.era5_profile.length){
+      modelData = { label: 'ERA5 (CDS)', profile: ref.era5_profile };
+      statusEl.textContent = 'ERA5 (CDS) · reanàlisi';
+    } else {
+      modelData = null;
+      statusEl.textContent = 'ERA5 no disponible per aquesta sonda (era massa recent quan es va processar, o el CDS no va respondre en aquell moment).';
+    }
+    renderAllCharts();
+    return;
+  }
+
   const launchDt = parseLaunchDateTime(ref);
   if(!launchDt || isNaN(launchDt)){
     statusEl.textContent = 'No s\'ha pogut determinar la data/hora de llançament.';
@@ -895,6 +911,7 @@ function buildSidebar(){
     const idx = typeCount[s.tipus] = (typeCount[s.tipus] || 0);
     typeCount[s.tipus]++;
     const color = tipusColor(s.tipus, idx);
+    const elev = (s.launch && s.launch.alt_msl_m != null) ? Math.round(s.launch.alt_msl_m) : null;
     return `<label class="sonda-row">
       <input type="checkbox" checked data-id="${s.sond_id}">
       <span class="swatch" style="background:${color}"></span>
@@ -903,7 +920,13 @@ function buildSidebar(){
         <option value="ambient" ${s.tipus==='ambient'?'selected':''}>ambient</option>
         <option value="columna" ${s.tipus==='columna'?'selected':''}>columna</option>
       </select>
-    </label>`;
+    </label>
+    <div class="sonda-meta-row" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin:-4px 0 8px 22px;">
+      <span>${s.launch_time_utc || '—'} UTC</span>
+      <span class="elev-edit-wrap" style="display:flex; align-items:center; gap:3px;" title="alçada de llançament (m ASL) — corregeix-la si el GPS/altímetre ha fet un mal fix inicial">
+        <input type="number" class="elev-edit" data-sond-id="${s.sond_id}" value="${elev != null ? elev : ''}" style="width:58px; padding:1px 3px; border:1px solid var(--panel-border); border-radius:3px; font-family:var(--font-mono); font-size:10.5px;">m
+      </span>
+    </div>`;
   }).join('');
   list.querySelectorAll('input[type=checkbox]').forEach(cb => {
     cb.addEventListener('change', () => {
@@ -915,6 +938,10 @@ function buildSidebar(){
     // evita que clicar el desplegable (dins la <label>) marqui/desmarqui el checkbox
     sel.addEventListener('click', e => e.stopPropagation());
     sel.addEventListener('change', e => editSondaTipus(sel.dataset.sondId, sel.value, sel));
+  });
+  list.querySelectorAll('.elev-edit').forEach(inp => {
+    inp.addEventListener('keydown', e => { if(e.key === 'Enter') inp.blur(); });
+    inp.addEventListener('change', () => editSondaElevation(inp.dataset.sondId, inp.value, inp));
   });
 }
 
@@ -1327,25 +1354,208 @@ function makeWindChart(){
   });
 }
 
-function renderWaypoints(){
-  const el = document.getElementById('waypoints');
-  el.innerHTML = activeSondes().map(({s, color}) => {
-    const l = s.launch;
-    const elev = (l && l.alt_msl_m != null) ? Math.round(l.alt_msl_m) : null;
-    return `<div class="wp-row">
-      <span><span class="swatch" style="display:inline-block;background:${color};width:8px;height:8px;border-radius:2px;margin-right:6px;"></span>${sondaLabel(s.sond_id)}</span>
-      <span style="display:flex; align-items:center; gap:8px;">
-        <b>${l ? l.lat.toFixed(4)+', '+l.lon.toFixed(4) : '—'} · ${s.launch_time_utc || '—'} UTC</b>
-        <span class="elev-edit-wrap" style="display:flex; align-items:center; gap:3px; font-family:var(--font-mono); font-size:11px; color:var(--text-dim);" title="alçada de llançament (m ASL) — corregeix-la si el GPS/altímetre ha fet un mal fix inicial">
-          <input type="number" class="elev-edit" data-sond-id="${s.sond_id}" value="${elev != null ? elev : ''}" style="width:62px; padding:2px 4px; border:1px solid var(--panel-border); border-radius:3px; font-family:var(--font-mono); font-size:11px;">m
-        </span>
-      </span>
-    </div>`;
-  }).join('');
-  el.querySelectorAll('.elev-edit').forEach(inp => {
-    inp.addEventListener('keydown', e => { if(e.key === 'Enter') inp.blur(); });
-    inp.addEventListener('change', () => editSondaElevation(inp.dataset.sondId, inp.value, inp));
+// ============================================================
+// Skew-T log-P
+// ============================================================
+
+function dewpointC(tempC, rhPct){
+  if(tempC == null || rhPct == null || rhPct <= 0) return null;
+  const lnRH = Math.log(rhPct / 100);
+  const a = (17.67 * tempC) / (243.5 + tempC);
+  return (243.5 * (lnRH + a)) / (17.67 - lnRH - a);
+}
+
+function satVaporPressure(tempC){
+  return 6.112 * Math.exp((17.67 * tempC) / (tempC + 243.5));
+}
+
+function satMixingRatio(tempC, pressureMb){
+  const es = satVaporPressure(tempC);
+  const denom = pressureMb - es;
+  return denom > 0 ? 0.622 * es / denom : 0;
+}
+
+function moistAdiabatT(T0C, P0, targetP){
+  // Integra numericament l'equacio de l'adiabata saturada (RK4, passos
+  // petits en ln(P)) des de (T0C, P0) fins a targetP.
+  const Rd = 287.05, cp = 1004.0, Lv = 2.501e6, eps = 0.622;
+  const dTdlnP = (T_K, P) => {
+    const tC = T_K - 273.15;
+    const ws = satMixingRatio(tC, P);
+    const num = Rd * T_K + Lv * ws;
+    const den = cp + (Lv * Lv * ws * eps) / (Rd * T_K * T_K);
+    return num / den; // dT/d(lnP) al llarg de l'adiabata saturada
+  };
+  let T = T0C + 273.15;
+  let lnP = Math.log(P0);
+  const lnPTarget = Math.log(targetP);
+  const steps = 40;
+  const dLnP = (lnPTarget - lnP) / steps;
+  for(let i = 0; i < steps; i++){
+    const k1 = dTdlnP(T, Math.exp(lnP));
+    const k2 = dTdlnP(T + 0.5*dLnP*k1, Math.exp(lnP + 0.5*dLnP));
+    const k3 = dTdlnP(T + 0.5*dLnP*k2, Math.exp(lnP + 0.5*dLnP));
+    const k4 = dTdlnP(T + dLnP*k3, Math.exp(lnP + dLnP));
+    T += (dLnP/6) * (k1 + 2*k2 + 2*k3 + k4);
+    lnP += dLnP;
+  }
+  return T - 273.15;
+}
+
+function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, marginBottom){
+  const plotW = width - marginLeft - 10;
+  const plotH = height - marginBottom - 20;
+  const lnPmax = Math.log(pMax), lnPmin = Math.log(pMin);
+
+  const toY = (p) => 20 + plotH * (lnPmax - Math.log(p)) / (lnPmax - lnPmin);
+  const skewPerPixelUp = (tMax - tMin) / plotH * 1.1; // pendent del "biaix": com mes amunt, mes cap a la dreta
+  const toX = (tC, p) => {
+    const y = toY(p);
+    const yBottom = 20 + plotH;
+    const xBase = marginLeft + (tC - tMin) / (tMax - tMin) * plotW;
+    return xBase + skewPerPixelUp * (yBottom - y);
+  };
+  return { toX, toY, plotW, plotH, marginLeft, marginBottom };
+}
+
+function renderSkewT(){
+  const canvas = document.getElementById('skewtCanvas');
+  const box = document.getElementById('skewtBox');
+  const dpr = window.devicePixelRatio || 1;
+  const width = box.clientWidth, height = box.clientHeight;
+  canvas.width = width * dpr; canvas.height = height * dpr;
+  canvas.style.width = width + 'px'; canvas.style.height = height + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const PMAX = 1000, PMIN = 100, TMIN = -40, TMAX = 45;
+  const marginLeft = 34, marginBottom = 26;
+  const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom);
+
+  ctx.font = '9px "Roboto Mono", monospace';
+
+  // --- isobars ---
+  const STD_LEVELS = [1000, 850, 700, 500, 400, 300, 250, 200, 150, 100];
+  ctx.strokeStyle = '#ddd'; ctx.fillStyle = '#888'; ctx.lineWidth = 1;
+  STD_LEVELS.forEach(p => {
+    const y = toY(p);
+    ctx.beginPath(); ctx.moveTo(marginLeft, y); ctx.lineTo(width - 10, y); ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(String(p), marginLeft - 4, y + 3);
   });
+
+  // --- isotermes (esbiaixades) ---
+  ctx.strokeStyle = '#e5cfc0';
+  for(let t = -80; t <= 60; t += 10){
+    ctx.beginPath();
+    let started = false;
+    for(let p = PMAX; p >= PMIN; p -= 20){
+      const x = toX(t, p), y = toY(p);
+      if(x < marginLeft - 40 || x > width + 40) continue;
+      if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    if(t >= TMIN && t <= TMAX){
+      ctx.fillStyle = '#c99a7c'; ctx.textAlign = 'center';
+      ctx.fillText(String(t), toX(t, PMAX), height - marginBottom + 12);
+    }
+  }
+
+  // --- adiabates seques ---
+  ctx.strokeStyle = '#f0d8b0';
+  for(let theta = 230; theta <= 420; theta += 10){
+    ctx.beginPath();
+    let started = false;
+    for(let p = PMAX; p >= PMIN; p -= 20){
+      const tC = theta * Math.pow(p / 1000, 0.286) - 273.15;
+      const x = toX(tC, p), y = toY(p);
+      if(x < marginLeft - 60 || x > width + 60){ started = false; continue; }
+      if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // --- adiabates saturades (humides) ---
+  ctx.strokeStyle = '#bcd9c4';
+  [-20, -10, 0, 5, 10, 15, 20, 25, 30].forEach(t0 => {
+    ctx.beginPath();
+    let started = false;
+    for(let p = PMAX; p >= PMIN; p -= 40){
+      const tC = moistAdiabatT(t0, PMAX, p);
+      const x = toX(tC, p), y = toY(p);
+      if(x < marginLeft - 60 || x > width + 60){ started = false; continue; }
+      if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+
+  // --- linies de raó de mescla constant ---
+  ctx.strokeStyle = '#d8c2a8';
+  ctx.setLineDash([2, 3]);
+  [1, 2, 4, 7, 10, 16, 24].forEach(w => {
+    ctx.beginPath();
+    let started = false;
+    for(let p = PMAX; p >= 300; p -= 40){
+      const e = (w / 1000) * p / (0.622 + w / 1000);
+      const lnE = Math.log(e / 6.112);
+      const tC = (243.5 * lnE) / (17.67 - lnE);
+      const x = toX(tC, p), y = toY(p);
+      if(x < marginLeft - 20 || x > width + 20){ started = false; continue; }
+      if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // --- vora del quadre ---
+  ctx.strokeStyle = '#999';
+  ctx.strokeRect(marginLeft, 20, width - marginLeft - 10, height - marginBottom - 20);
+
+  // --- dades: fins a 2 sondes actives ---
+  const sondes = activeSondes().slice(0, 2);
+  sondes.forEach(({s, color}) => {
+    const pts = (s.profile || [])
+      .filter(p => p.pressure_mb != null && p.temp_c != null)
+      .sort((a, b) => b.pressure_mb - a.pressure_mb);
+    if(!pts.length) return;
+
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([]);
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const x = toX(p.temp_c, p.pressure_mb), y = toY(p.pressure_mb);
+      if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    let started = false;
+    pts.forEach((p) => {
+      const td = dewpointC(p.temp_c, p.rh_pct);
+      if(td == null) { started = false; return; }
+      const x = toX(td, p.pressure_mb), y = toY(p.pressure_mb);
+      if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // --- llegenda ---
+  ctx.font = '10px "Roboto Mono", monospace';
+  let lx = marginLeft + 6, ly = 32;
+  sondes.forEach(({s, color}) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(lx, ly - 8, 10, 10);
+    ctx.fillStyle = '#444'; ctx.textAlign = 'left';
+    const label = `${s.tipus} — ${sondaLabel(s.sond_id)} (T continu, Td discontinu)`;
+    ctx.fillText(label, lx + 14, ly);
+    ly += 14;
+  });
+  if(activeSondes().length > 2){
+    ctx.fillStyle = '#999';
+    ctx.fillText('(nomes es mostren les 2 primeres sondes actives)', lx, ly);
+  }
 }
 
 let driftMap = null;
@@ -1741,7 +1951,7 @@ function renderAllCharts(){
   charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', 'rh', '%', 0);
   charts.wind = makeWindChart();
   charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', 'rise', 'm/s', 1);
-  renderWaypoints();
+  renderSkewT();
   renderDrift();
 }
 
