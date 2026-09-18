@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
     --bg: #eef0ef; --panel: #ffffff; --panel-border: #d5d5d5;
@@ -317,7 +318,7 @@
             </select>
             <label class="toggle-btn" style="cursor:pointer; font-weight:normal;">
               Perímetre (GeoJSON)
-              <input type="file" id="perimeterFile" accept=".json,.geojson,.kml" style="display:none;">
+              <input type="file" id="perimeterFile" accept=".json,.geojson,.kml,.kmz" style="display:none;">
             </label>
             <span id="perimeterStatus" style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim);"></span>
           </h3>
@@ -1627,16 +1628,27 @@ document.getElementById('perimeterFile').addEventListener('change', async (e) =>
   const statusEl = document.getElementById('perimeterStatus');
   e.target.value = '';
 
+  const nameLower = file.name.toLowerCase();
+  const isKml = nameLower.endsWith('.kml');
+  const isKmz = nameLower.endsWith('.kmz');
+
   let geojson;
-  const isKml = file.name.toLowerCase().endsWith('.kml');
   try{
-    const text = await file.text();
-    geojson = isKml ? kmlToGeoJSON(text) : JSON.parse(text);
+    let kmlText;
+    if(isKmz){
+      const zip = await JSZip.loadAsync(file);
+      const kmlEntry = Object.values(zip.files).find(f => !f.dir && f.name.toLowerCase().endsWith('.kml'));
+      if(!kmlEntry) throw new Error('el .kmz no conté cap fitxer .kml a dins');
+      kmlText = await kmlEntry.async('string');
+    } else if(isKml){
+      kmlText = await file.text();
+    }
+    geojson = (isKml || isKmz) ? kmlToGeoJSON(kmlText) : JSON.parse(await file.text());
   } catch(err){
-    statusEl.textContent = isKml ? ('KML no vàlid: ' + err.message) : 'Fitxer no és JSON vàlid.';
+    statusEl.textContent = (isKml || isKmz) ? ('KML/KMZ no vàlid: ' + err.message) : 'Fitxer no és JSON vàlid.';
     return;
   }
-  if(isKml && (!geojson.features || !geojson.features.length)){
+  if((isKml || isKmz) && (!geojson.features || !geojson.features.length)){
     statusEl.textContent = 'No s\'ha trobat cap geometria (Polygon/LineString/Point) al KML.';
     return;
   }
