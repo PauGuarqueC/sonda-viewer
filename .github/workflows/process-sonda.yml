@@ -27,13 +27,11 @@ jobs:
           python-version: "3.11"
 
       - name: Instal·la dependències
-        run: pip install pycryptodome cdsapi xarray netCDF4
+        run: pip install pycryptodome
 
       - name: Processa els llançaments nous
         env:
           DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
-          CDSAPI_URL: https://cds.climate.copernicus.eu/api
-          CDSAPI_KEY: ${{ secrets.CDS_API_KEY }}
         run: python scripts/process_incoming.py
 
       - name: Publica els canvis (si n'hi ha)
