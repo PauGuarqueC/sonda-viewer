@@ -940,6 +940,42 @@ async function editSondaTipus(sondId, newTipus, selectEl){
   }
 }
 
+async function editSondaElevation(sondId, newValueStr, inputEl){
+  const sondaBefore = INCENDI.sondes.find(s => s.sond_id === sondId);
+  const previousElev = (sondaBefore && sondaBefore.launch && sondaBefore.launch.alt_msl_m != null)
+    ? sondaBefore.launch.alt_msl_m : null;
+
+  const newElev = parseFloat(newValueStr);
+  if(isNaN(newElev)){ inputEl.value = previousElev != null ? Math.round(previousElev) : ''; return; }
+  if(previousElev != null && Math.round(newElev) === Math.round(previousElev)) return; // sense canvi real
+
+  const offset = previousElev != null ? (newElev - previousElev) : newElev;
+
+  let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
+  if(!password){
+    password = prompt('Contrasenya de pujada (cal per editar sondes):') || '';
+    if(!password) { inputEl.value = previousElev != null ? Math.round(previousElev) : ''; return; }
+  }
+
+  inputEl.disabled = true;
+  try{
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, action: 'edit_elevation', slug: currentSlug, sondId, offset })
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+    // recarreguem l'incendi sencer: l'offset afecta tot el perfil, el track
+    // del mapa i els eixos, no nomes aquest input
+    await openIncendi(currentSlug);
+  } catch(err){
+    alert('No s\'ha pogut corregir l\'alçada: ' + err.message);
+    inputEl.value = previousElev != null ? Math.round(previousElev) : '';
+    inputEl.disabled = false;
+  }
+}
+
 function activeSondes(){
   const typeCount = {};
   return INCENDI.sondes
@@ -1151,11 +1187,21 @@ function renderWaypoints(){
   const el = document.getElementById('waypoints');
   el.innerHTML = activeSondes().map(({s, color}) => {
     const l = s.launch;
+    const elev = (l && l.alt_msl_m != null) ? Math.round(l.alt_msl_m) : null;
     return `<div class="wp-row">
       <span><span class="swatch" style="display:inline-block;background:${color};width:8px;height:8px;border-radius:2px;margin-right:6px;"></span>${sondaLabel(s.sond_id)}</span>
-      <b>${l ? l.lat.toFixed(4)+', '+l.lon.toFixed(4) : '—'} · ${s.launch_time_utc || '—'} UTC</b>
+      <span style="display:flex; align-items:center; gap:8px;">
+        <b>${l ? l.lat.toFixed(4)+', '+l.lon.toFixed(4) : '—'} · ${s.launch_time_utc || '—'} UTC</b>
+        <span class="elev-edit-wrap" style="display:flex; align-items:center; gap:3px; font-family:var(--font-mono); font-size:11px; color:var(--text-dim);" title="alçada de llançament (m ASL) — corregeix-la si el GPS/altímetre ha fet un mal fix inicial">
+          <input type="number" class="elev-edit" data-sond-id="${s.sond_id}" value="${elev != null ? elev : ''}" style="width:62px; padding:2px 4px; border:1px solid var(--panel-border); border-radius:3px; font-family:var(--font-mono); font-size:11px;">m
+        </span>
+      </span>
     </div>`;
   }).join('');
+  el.querySelectorAll('.elev-edit').forEach(inp => {
+    inp.addEventListener('keydown', e => { if(e.key === 'Enter') inp.blur(); });
+    inp.addEventListener('change', () => editSondaElevation(inp.dataset.sondId, inp.value, inp));
+  });
 }
 
 let driftMap = null;
