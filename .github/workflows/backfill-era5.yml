@@ -1,0 +1,57 @@
+name: Afegeix perfils ERA5
+
+# Independent de "Processa sondes pujades": es dispara automaticament just
+# despres que aquella acabi (workflow_run) i tambe cada nit com a xarxa de
+# seguretat (per si el CDS no responia be en aquell moment). Mai bloqueja
+# ni alenteix una pujada nova.
+
+on:
+  workflow_run:
+    workflows: ["Processa sondes pujades"]
+    types: [completed]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: backfill-era5
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instal·la dependències
+        run: pip install pycryptodome cdsapi xarray netCDF4
+
+      - name: Afegeix ERA5 a sondes prou antigues
+        env:
+          DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+          CDSAPI_URL: https://cds.climate.copernicus.eu/api
+          CDSAPI_KEY: ${{ secrets.CDS_API_KEY }}
+        run: python scripts/backfill_era5.py
+
+      - name: Publica els canvis (si n'hi ha)
+        run: |
+          git config user.name "sonda-bot"
+          git config user.email "sonda-bot@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Cap dada nova a publicar."
+          else
+            git commit -m "Afegeix perfils ERA5"
+            git pull --rebase origin main
+            git push
+          fi
