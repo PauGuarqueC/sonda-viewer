@@ -27,17 +27,20 @@ jobs:
           python-version: "3.11"
 
       - name: Instal·la dependències
-        run: pip install pycryptodome
+        run: pip install pycryptodome cdsapi xarray netCDF4
 
       - name: Processa els llançaments nous
         env:
           DATA_ENCRYPT_KEY: ${{ secrets.DATA_ENCRYPT_KEY }}
+          CDSAPI_URL: https://cds.climate.copernicus.eu/api
+          CDSAPI_KEY: ${{ secrets.CDS_API_KEY }}
         run: python scripts/process_incoming.py
 
       - name: Publica els canvis (si n'hi ha)
         run: |
           git config user.name "sonda-bot"
           git config user.email "sonda-bot@users.noreply.github.com"
+          mkdir -p data
           git add data/
           if git diff --cached --quiet; then
             echo "Cap dada nova a publicar."
