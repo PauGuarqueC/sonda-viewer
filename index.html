@@ -1513,7 +1513,7 @@ function renderDrift(){
 }
 document.getElementById('driftColorBy').addEventListener('change', renderDrift);
 
-const ISOCHRONE_TIME_KEYS = ['time', 'hora', 'timestamp', 'datetime', 'date', 'data'];
+const ISOCHRONE_TIME_KEYS = ['FeHo', 'time', 'hora', 'timestamp', 'datetime', 'date', 'data'];
 
 function renderPerimeter(geojson, map){
   const features = geojson.type === 'FeatureCollection' ? geojson.features : [geojson];
