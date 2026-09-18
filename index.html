@@ -335,7 +335,11 @@
           </div>
         </div>
         <div class="block">
-          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 4px;">Skew-T (fins a 2 sondes)</h3>
+          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 6px;">Skew-T</h3>
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; font-family:var(--font-mono); font-size:10.5px;">
+            <select id="skewtSonda1" style="flex:1; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;"></select>
+            <select id="skewtSonda2" style="flex:1; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;"></select>
+          </div>
           <div id="skewtBox" style="width:100%; height:480px; position:relative;"><canvas id="skewtCanvas"></canvas></div>
         </div>
       </div>
@@ -903,14 +907,18 @@ wireDualSlider('sliderRhMin', 'sliderRhMax', 'sliderRhMinVal', 'sliderRhMaxVal',
 wireDualSlider('sliderWindMin', 'sliderWindMax', 'sliderWindMinVal', 'sliderWindMaxVal', 'wind');
 wireDualSlider('sliderRiseMin', 'sliderRiseMax', 'sliderRiseMinVal', 'sliderRiseMaxVal', 'rise');
 
+let allSondaColors = {};
+
 function buildSidebar(){
   document.getElementById('incendiName').textContent = INCENDI.incendi || '—';
   const list = document.getElementById('sondaList');
   const typeCount = {};
+  allSondaColors = {};
   list.innerHTML = INCENDI.sondes.map((s) => {
     const idx = typeCount[s.tipus] = (typeCount[s.tipus] || 0);
     typeCount[s.tipus]++;
     const color = tipusColor(s.tipus, idx);
+    allSondaColors[s.sond_id] = color;
     const elev = (s.launch && s.launch.alt_msl_m != null) ? Math.round(s.launch.alt_msl_m) : null;
     return `<label class="sonda-row">
       <input type="checkbox" checked data-id="${s.sond_id}">
@@ -943,7 +951,24 @@ function buildSidebar(){
     inp.addEventListener('keydown', e => { if(e.key === 'Enter') inp.blur(); });
     inp.addEventListener('change', () => editSondaElevation(inp.dataset.sondId, inp.value, inp));
   });
+  populateSkewTSelectors();
 }
+
+function populateSkewTSelectors(){
+  const opts = INCENDI.sondes.map(s => `<option value="${s.sond_id}">${s.tipus} — ${sondaLabel(s.sond_id)}</option>`).join('');
+  const sel1 = document.getElementById('skewtSonda1');
+  const sel2 = document.getElementById('skewtSonda2');
+  sel1.innerHTML = opts;
+  sel2.innerHTML = '<option value="">(cap)</option>' + opts;
+
+  // per defecte: primera sonda, i la primera "columna" si n'hi ha (o la
+  // segona sonda si no), perque la comparacio mes habitual surti d'entrada
+  sel1.value = INCENDI.sondes[0].sond_id;
+  const columna = INCENDI.sondes.find(s => s.tipus === 'columna' && s.sond_id !== sel1.value);
+  sel2.value = columna ? columna.sond_id : (INCENDI.sondes[1] ? INCENDI.sondes[1].sond_id : '');
+}
+document.getElementById('skewtSonda1').addEventListener('change', renderSkewT);
+document.getElementById('skewtSonda2').addEventListener('change', renderSkewT);
 
 async function waitForIncendiUpdate(slug, beforeCipher){
   const statusEl = document.getElementById('editStatus');
@@ -1402,12 +1427,12 @@ function moistAdiabatT(T0C, P0, targetP){
   return T - 273.15;
 }
 
-function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, marginBottom){
-  const plotW = width - marginLeft - 10;
+function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, marginBottom, marginRight){
+  const plotW = width - marginLeft - marginRight;
   const plotH = height - marginBottom - 20;
   const lnPmax = Math.log(pMax), lnPmin = Math.log(pMin);
 
-  const toY = (p) => 20 + plotH * (lnPmax - Math.log(p)) / (lnPmax - lnPmin);
+  const toY = (p) => 20 + plotH * (Math.log(p) - lnPmin) / (lnPmax - lnPmin);
   const skewPerPixelUp = (tMax - tMin) / plotH * 1.1; // pendent del "biaix": com mes amunt, mes cap a la dreta
   const toX = (tC, p) => {
     const y = toY(p);
@@ -1429,9 +1454,21 @@ function renderSkewT(){
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
+  // Sondes triades als dos desplegables (calculat ABANS de la transformacio,
+  // perque la caixa principal reservi espai fix a la dreta per les barbes
+  // de vent i mai s'hi encavalquin les linies de dades)
+  const chosenIds = [document.getElementById('skewtSonda1').value, document.getElementById('skewtSonda2').value]
+    .filter(Boolean);
+  const sondes = chosenIds
+    .map(id => INCENDI.sondes.find(s => s.sond_id === id))
+    .filter(Boolean)
+    .map(s => ({ s, color: allSondaColors[s.sond_id] || '#333' }));
+
   const PMAX = 1000, PMIN = 100, TMIN = -40, TMAX = 45;
   const marginLeft = 34, marginBottom = 26;
-  const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom);
+  const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
+  const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom, barbZoneWidth);
+  const plotRight = width - barbZoneWidth;
 
   ctx.font = '9px "Roboto Mono", monospace';
 
@@ -1440,7 +1477,7 @@ function renderSkewT(){
   ctx.strokeStyle = '#ddd'; ctx.fillStyle = '#888'; ctx.lineWidth = 1;
   STD_LEVELS.forEach(p => {
     const y = toY(p);
-    ctx.beginPath(); ctx.moveTo(marginLeft, y); ctx.lineTo(width - 10, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(marginLeft, y); ctx.lineTo(plotRight, y); ctx.stroke();
     ctx.textAlign = 'right';
     ctx.fillText(String(p), marginLeft - 4, y + 3);
   });
@@ -1452,7 +1489,7 @@ function renderSkewT(){
     let started = false;
     for(let p = PMAX; p >= PMIN; p -= 20){
       const x = toX(t, p), y = toY(p);
-      if(x < marginLeft - 40 || x > width + 40) continue;
+      if(x < marginLeft - 40 || x > plotRight + 40) continue;
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -1470,7 +1507,7 @@ function renderSkewT(){
     for(let p = PMAX; p >= PMIN; p -= 20){
       const tC = theta * Math.pow(p / 1000, 0.286) - 273.15;
       const x = toX(tC, p), y = toY(p);
-      if(x < marginLeft - 60 || x > width + 60){ started = false; continue; }
+      if(x < marginLeft - 60 || x > plotRight + 60){ started = false; continue; }
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -1484,7 +1521,7 @@ function renderSkewT(){
     for(let p = PMAX; p >= PMIN; p -= 40){
       const tC = moistAdiabatT(t0, PMAX, p);
       const x = toX(tC, p), y = toY(p);
-      if(x < marginLeft - 60 || x > width + 60){ started = false; continue; }
+      if(x < marginLeft - 60 || x > plotRight + 60){ started = false; continue; }
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -1501,7 +1538,7 @@ function renderSkewT(){
       const lnE = Math.log(e / 6.112);
       const tC = (243.5 * lnE) / (17.67 - lnE);
       const x = toX(tC, p), y = toY(p);
-      if(x < marginLeft - 20 || x > width + 20){ started = false; continue; }
+      if(x < marginLeft - 20 || x > plotRight + 20){ started = false; continue; }
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
@@ -1510,11 +1547,10 @@ function renderSkewT(){
 
   // --- vora del quadre ---
   ctx.strokeStyle = '#999';
-  ctx.strokeRect(marginLeft, 20, width - marginLeft - 10, height - marginBottom - 20);
+  ctx.strokeRect(marginLeft, 20, plotRight - marginLeft, height - marginBottom - 20);
 
-  // --- dades: fins a 2 sondes actives ---
-  const sondes = activeSondes().slice(0, 2);
-  sondes.forEach(({s, color}) => {
+  const barbColX = plotRight + 12; // franja reservada a la dreta de la caixa, mai s'encavalca amb les dades
+  sondes.forEach(({s, color}, sIdx) => {
     const pts = (s.profile || [])
       .filter(p => p.pressure_mb != null && p.temp_c != null)
       .sort((a, b) => b.pressure_mb - a.pressure_mb);
@@ -1539,6 +1575,17 @@ function renderSkewT(){
     });
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // --- barbes de vent, una columna per sonda, espaiades per pressio ---
+    const barbX = barbColX + sIdx * 20;
+    const windPts = pts.filter(p => p.wind_speed_ms != null && p.wind_dir_deg != null);
+    let lastY = -Infinity;
+    for(const p of windPts){
+      const y = toY(p.pressure_mb);
+      if(Math.abs(y - lastY) < 16) continue; // evita amuntegar barbes massa juntes
+      drawWindBarb(ctx, barbX, y, p.wind_speed_ms, p.wind_dir_deg, color);
+      lastY = y;
+    }
   });
 
   // --- llegenda ---
@@ -1548,14 +1595,10 @@ function renderSkewT(){
     ctx.fillStyle = color;
     ctx.fillRect(lx, ly - 8, 10, 10);
     ctx.fillStyle = '#444'; ctx.textAlign = 'left';
-    const label = `${s.tipus} — ${sondaLabel(s.sond_id)} (T continu, Td discontinu)`;
+    const label = `${s.tipus} — ${sondaLabel(s.sond_id)} (T continu, Td discontinu, barbes a la dreta)`;
     ctx.fillText(label, lx + 14, ly);
     ly += 14;
   });
-  if(activeSondes().length > 2){
-    ctx.fillStyle = '#999';
-    ctx.fillText('(nomes es mostren les 2 primeres sondes actives)', lx, ly);
-  }
 }
 
 let driftMap = null;
