@@ -97,11 +97,15 @@ def _avg_launch_coords(incendi_data):
 def update_index(slug, incendi_nom, incendi_data):
     index = read_encrypted_json(INDEX_PATH, [])
     index = [it for it in index if it["slug"] != slug]
+    sondes = incendi_data["sondes"]
+    anys = sorted({s["sond_id"][:4] for s in sondes if s["sond_id"][:4].isdigit()})
     entry = {
         "slug": slug,
         "nom": incendi_nom,
-        "n_sondes": len(incendi_data["sondes"]),
+        "n_sondes": len(sondes),
         "actualitzat": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "any": anys[0] if anys else None,
+        "te_ambient": any(s.get("tipus") == "ambient" for s in sondes),
     }
     coords = _avg_launch_coords(incendi_data)
     if coords:
@@ -112,24 +116,33 @@ def update_index(slug, incendi_nom, incendi_data):
 
 
 def backfill_index_locations():
-    """Omple lat/lon a l'index per a incendis processats abans que
-    guardessim la ubicacio (no cal cap sonda nova per activar-ho)."""
+    """Omple lat/lon, any i te_ambient a l'index per a incendis processats
+    abans que guardessim aquestes dades (no cal cap sonda nova per activar-ho)."""
     index = read_encrypted_json(INDEX_PATH, [])
     changed = False
     for entry in index:
-        if entry.get("lat") is not None:
+        needs_coords = entry.get("lat") is None
+        needs_meta = "any" not in entry or "te_ambient" not in entry
+        if not needs_coords and not needs_meta:
             continue
         incendi_path = DATA_DIR / f"{entry['slug']}.json.enc"
         incendi_data = read_encrypted_json(incendi_path, None)
         if not incendi_data:
             continue
-        coords = _avg_launch_coords(incendi_data)
-        if coords:
-            entry["lat"], entry["lon"] = coords
+        if needs_coords:
+            coords = _avg_launch_coords(incendi_data)
+            if coords:
+                entry["lat"], entry["lon"] = coords
+                changed = True
+        if needs_meta:
+            sondes = incendi_data["sondes"]
+            anys = sorted({s["sond_id"][:4] for s in sondes if s["sond_id"][:4].isdigit()})
+            entry["any"] = anys[0] if anys else None
+            entry["te_ambient"] = any(s.get("tipus") == "ambient" for s in sondes)
             changed = True
     if changed:
         write_encrypted_json(INDEX_PATH, index)
-        print("[ok] ubicacions retroactivament omplertes a l'index")
+        print("[ok] ubicacions/any/ambient retroactivament omplerts a l'index")
 
 
 def main():
