@@ -308,13 +308,18 @@
 
       <div class="lower">
         <div class="block">
-          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;display:flex;align-items:center;gap:10px;">
+          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             Deriva horitzontal
             <select id="driftColorBy" style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);border:1px solid var(--panel-border);border-radius:4px;padding:2px 4px;">
               <option value="alt">color = alçada</option>
               <option value="rise">color = velocitat d'ascens</option>
               <option value="rh">color = humitat relativa</option>
             </select>
+            <label class="toggle-btn" style="cursor:pointer; font-weight:normal;">
+              Perímetre (GeoJSON)
+              <input type="file" id="perimeterFile" accept=".json,.geojson" style="display:none;">
+            </label>
+            <span id="perimeterStatus" style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim);"></span>
           </h3>
           <div id="driftBox" style="height:420px; border-radius:4px; overflow:hidden;"></div>
           <div class="legend" id="driftLegend" style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:8px;flex-wrap:wrap;">
@@ -1032,6 +1037,109 @@ function tooltipCallbacks(unit, decimals){
   };
 }
 
+function computeABLh(s){
+  // Metode del nombre de Richardson global (Ri_b): busca l'alcada on Ri_b
+  // supera el llindar critic (0.25), interpolant entre els dos punts que
+  // l'envolten per mes precisio. Fa servir alcada AGL per al calcul (com es
+  // habitual), i torna el resultat en ASL per dibuixar-lo al mateix eix
+  // que la resta.
+  const profile = (s.profile || []).filter(p => p.theta_v_k != null && p.height_agl_m != null && p.alt_msl_m != null);
+  if(profile.length < 3) return null;
+  const sfc = profile[0];
+  const thetaVsfc = sfc.theta_v_k;
+  const RI_CRIT = 0.25;
+  const G = 9.81;
+  const MIN_SPEED = 0.5; // evita dividir per gairebe-zero a tocar de superficie
+
+  const riAt = (p) => {
+    const dz = p.height_agl_m - sfc.height_agl_m;
+    if(dz <= 0) return null;
+    const speed = Math.max(p.wind_speed_ms || 0, MIN_SPEED);
+    return G * (p.theta_v_k - thetaVsfc) * dz / (thetaVsfc * speed * speed);
+  };
+
+  let riPrev = 0;
+  for(let i = 1; i < profile.length; i++){
+    const ri = riAt(profile[i]);
+    if(ri == null) continue;
+    if(ri >= RI_CRIT){
+      const prev = profile[i - 1];
+      const frac = (ri === riPrev) ? 0 : (RI_CRIT - riPrev) / (ri - riPrev);
+      const clampedFrac = Math.max(0, Math.min(1, frac));
+      return prev.alt_msl_m + clampedFrac * (profile[i].alt_msl_m - prev.alt_msl_m);
+    }
+    riPrev = ri;
+  }
+  return null; // no s'ha trobat una inversio clara dins el rang mesurat
+}
+
+function computeLCL(s){
+  // Formula de Bolton (1980) per la temperatura del LCL (precisio ~0.1K,
+  // el mateix mètode analitic que fan servir moltes eines meteorologiques
+  // per evitar la iteracio de Davies-Jones que fa servir MetPy), i despres
+  // equacio hipsometrica per convertir la pressio del LCL en alçada.
+  const sfc = (s.profile || []).find(p => p.temp_c != null && p.rh_pct != null && p.pressure_mb != null && p.alt_msl_m != null && p.rh_pct > 0);
+  if(!sfc) return null;
+
+  const T = sfc.temp_c, RH = sfc.rh_pct, P = sfc.pressure_mb;
+  const lnRH = Math.log(RH / 100);
+  const a = (17.67 * T) / (243.5 + T);
+  const Td = (243.5 * (lnRH + a)) / (17.67 - lnRH - a);
+
+  const T_K = T + 273.15, Td_K = Td + 273.15;
+  const T_LCL = 1 / (1 / (Td_K - 56) + Math.log(T_K / Td_K) / 800) + 56; // Bolton (1980)
+
+  const thetaSfc = T_K * Math.pow(1000 / P, 0.286);
+  const P_LCL = 1000 * Math.pow(T_LCL / thetaSfc, 1 / 0.286);
+
+  const Rd = 287.05, g = 9.81;
+  const Tmean = (T_K + T_LCL) / 2;
+  const lclAgl = (Rd / g) * Tmean * Math.log(P / P_LCL); // equacio hipsometrica
+
+  return sfc.alt_msl_m + Math.max(lclAgl, 0);
+}
+
+function horizontalRefLinesPlugin(getLines){
+  return {
+    id: 'hRefLines',
+    afterDraw(chart){
+      const xScale = chart.scales.x, yScale = chart.scales.y;
+      const ctx = chart.ctx;
+      getLines().forEach(line => {
+        if(line.value == null || line.value < yScale.min || line.value > yScale.max) return;
+        const yPix = yScale.getPixelForValue(line.value);
+        ctx.save();
+        ctx.strokeStyle = line.color;
+        ctx.setLineDash(line.dash || [5, 3]);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(xScale.left, yPix);
+        ctx.lineTo(xScale.right, yPix);
+        ctx.stroke();
+        if(line.label){
+          ctx.setLineDash([]);
+          ctx.fillStyle = line.color;
+          ctx.font = '9px "Roboto Mono", monospace';
+          ctx.textAlign = 'left';
+          ctx.fillText(line.label, xScale.left + 2, yPix - 2);
+        }
+        ctx.restore();
+      });
+    }
+  };
+}
+
+function computeRefLinesForActiveSondes(){
+  const lines = [];
+  activeSondes().forEach(({s, color}) => {
+    const ablh = computeABLh(s);
+    const lcl = computeLCL(s);
+    if(ablh != null) lines.push({ value: ablh, color, label: 'ABLh', dash: [5,3] });
+    if(lcl != null) lines.push({ value: lcl, color, label: 'LCL', dash: [2,2] });
+  });
+  return lines;
+}
+
 function verticalRefLinePlugin(xValue, label, color){
   return {
     id: 'refLine',
@@ -1087,7 +1195,10 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
   return new Chart(ctx, {
     type: 'line',
     data: { datasets },
-    plugins: axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : [],
+    plugins: [
+      ...(axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : []),
+      horizontalRefLinesPlugin(computeRefLinesForActiveSondes)
+    ],
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
       scales: {
@@ -1198,7 +1309,7 @@ function makeWindChart(){
   return new Chart(ctx, {
     type:'line',
     data:{ datasets },
-    plugins: [windBarbsPlugin],
+    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(computeRefLinesForActiveSondes)],
     options:{
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
@@ -1388,9 +1499,97 @@ function renderDrift(){
     }
   });
 
+  if(INCENDI.perimeter){
+    try{
+      renderPerimeter(INCENDI.perimeter, driftMap);
+    } catch(e){ /* geojson invalid, ignorem-lo silenciosament al mapa */ }
+  }
+
   driftMap.fitBounds(allPts, { padding: [20,20] });
 }
 document.getElementById('driftColorBy').addEventListener('change', renderDrift);
+
+const ISOCHRONE_TIME_KEYS = ['time', 'hora', 'timestamp', 'datetime', 'date', 'data'];
+
+function renderPerimeter(geojson, map){
+  const features = geojson.type === 'FeatureCollection' ? geojson.features : [geojson];
+
+  if(features.length <= 1){
+    // un sol perimetre, sense noció de temps -> el dibuixem tal qual, com abans
+    L.geoJSON(geojson, {
+      style: { color: '#c0392b', weight: 2, fill: true, fillColor: '#c0392b', fillOpacity: 0.08, dashArray: '4,3' }
+    }).addTo(map);
+    return;
+  }
+
+  // diverses formes -> isocrones: intentem trobar un camp d'hora/data
+  // reconeixible; si no n'hi ha cap, acolorim per l'ordre d'aparicio
+  const timeKey = ISOCHRONE_TIME_KEYS.find(k => features.some(f => f.properties && f.properties[k] != null));
+  const values = features.map((f, i) => {
+    if(timeKey){
+      const raw = f.properties[timeKey];
+      const t = Date.parse(raw);
+      return isNaN(t) ? i : t;
+    }
+    return i;
+  });
+  const minV = Math.min(...values), maxV = Math.max(...values);
+
+  L.geoJSON(geojson, {
+    style: (feature) => {
+      const idx = features.indexOf(feature);
+      const color = valueColorContinuous(values[idx], minV, maxV);
+      return { color, weight: 2, fill: true, fillColor: color, fillOpacity: 0.12 };
+    },
+    onEachFeature: (feature, layer) => {
+      const idx = features.indexOf(feature);
+      const label = timeKey ? feature.properties[timeKey] : `#${idx + 1}`;
+      layer.bindPopup(`Isocrona ${label}`);
+    }
+  }).addTo(map);
+}
+
+document.getElementById('perimeterFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('perimeterStatus');
+  e.target.value = '';
+
+  let geojson;
+  try{
+    geojson = JSON.parse(await file.text());
+  } catch(err){
+    statusEl.textContent = 'Fitxer no és JSON vàlid.';
+    return;
+  }
+
+  let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
+  if(!password){
+    password = prompt('Contrasenya de pujada (cal per afegir el perímetre):') || '';
+    if(!password) return;
+  }
+
+  statusEl.textContent = 'Pujant...';
+  try{
+    const beforeFetched = await fetchEncrypted(`data/incendis/${currentSlug}.json.enc`);
+    const beforeCipher = beforeFetched.exists ? beforeFetched.ciphertext : null;
+
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, action: 'upload_perimeter', slug: currentSlug, geojson })
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+
+    statusEl.textContent = 'Actualitzant...';
+    await waitForIncendiUpdate(currentSlug, beforeCipher);
+    statusEl.textContent = '';
+    await openIncendi(currentSlug);
+  } catch(err){
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+});
 
 function downloadChartsImage(){
   const ids = ['chartTheta', 'chartRh', 'chartWind', 'chartRise'];
