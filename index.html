@@ -317,7 +317,7 @@
             </select>
             <label class="toggle-btn" style="cursor:pointer; font-weight:normal;">
               Perímetre (GeoJSON)
-              <input type="file" id="perimeterFile" accept=".json,.geojson" style="display:none;">
+              <input type="file" id="perimeterFile" accept=".json,.geojson,.kml" style="display:none;">
             </label>
             <span id="perimeterStatus" style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim);"></span>
           </h3>
@@ -1513,6 +1513,74 @@ function renderDrift(){
 }
 document.getElementById('driftColorBy').addEventListener('change', renderDrift);
 
+function kmlToGeoJSON(kmlText){
+  // Conversor KML -> GeoJSON minim, sense llibreries: Polygon, LineString i
+  // Point per Placemark, amb ExtendedData/Data/SimpleData i TimeStamp/
+  // TimeSpan traspassats a "properties" (aixi la deteccio d'hora de les
+  // isocrones funciona igual que amb GeoJSON nadiu).
+  const dom = new DOMParser().parseFromString(kmlText, 'text/xml');
+  if(dom.getElementsByTagName('parsererror').length) throw new Error('KML mal format');
+
+  const parseCoords = (text) => text.trim().split(/\s+/).filter(Boolean).map(tuple => {
+    const parts = tuple.split(',').map(Number);
+    return [parts[0], parts[1]]; // [lon, lat], ignorem l'alcada del KML
+  });
+
+  const geometryFromPlacemark = (pm) => {
+    const poly = pm.getElementsByTagName('Polygon')[0];
+    if(poly){
+      const ring = poly.getElementsByTagName('LinearRing')[0];
+      const coordsEl = ring && ring.getElementsByTagName('coordinates')[0];
+      if(coordsEl) return { type: 'Polygon', coordinates: [parseCoords(coordsEl.textContent)] };
+    }
+    const line = pm.getElementsByTagName('LineString')[0];
+    if(line){
+      const coordsEl = line.getElementsByTagName('coordinates')[0];
+      if(coordsEl) return { type: 'LineString', coordinates: parseCoords(coordsEl.textContent) };
+    }
+    const point = pm.getElementsByTagName('Point')[0];
+    if(point){
+      const coordsEl = point.getElementsByTagName('coordinates')[0];
+      if(coordsEl){
+        const c = parseCoords(coordsEl.textContent)[0];
+        if(c) return { type: 'Point', coordinates: c };
+      }
+    }
+    return null;
+  };
+
+  const features = [];
+  Array.from(dom.getElementsByTagName('Placemark')).forEach(pm => {
+    const geometry = geometryFromPlacemark(pm);
+    if(!geometry) return;
+
+    const properties = {};
+    const nameEl = pm.getElementsByTagName('name')[0];
+    if(nameEl) properties.name = nameEl.textContent;
+    const descEl = pm.getElementsByTagName('description')[0];
+    if(descEl) properties.description = descEl.textContent;
+
+    Array.from(pm.getElementsByTagName('Data')).forEach(d => {
+      const key = d.getAttribute('name');
+      const valueEl = d.getElementsByTagName('value')[0];
+      if(key && valueEl) properties[key] = valueEl.textContent;
+    });
+    Array.from(pm.getElementsByTagName('SimpleData')).forEach(d => {
+      const key = d.getAttribute('name');
+      if(key) properties[key] = d.textContent;
+    });
+
+    const whenEl = pm.getElementsByTagName('when')[0];
+    const beginEl = pm.getElementsByTagName('begin')[0];
+    if(whenEl) properties.time = whenEl.textContent;
+    else if(beginEl) properties.time = beginEl.textContent;
+
+    features.push({ type: 'Feature', properties, geometry });
+  });
+
+  return { type: 'FeatureCollection', features };
+}
+
 const ISOCHRONE_TIME_KEYS = ['FeHo', 'time', 'hora', 'timestamp', 'datetime', 'date', 'data'];
 
 function renderPerimeter(geojson, map){
@@ -1560,10 +1628,16 @@ document.getElementById('perimeterFile').addEventListener('change', async (e) =>
   e.target.value = '';
 
   let geojson;
+  const isKml = file.name.toLowerCase().endsWith('.kml');
   try{
-    geojson = JSON.parse(await file.text());
+    const text = await file.text();
+    geojson = isKml ? kmlToGeoJSON(text) : JSON.parse(text);
   } catch(err){
-    statusEl.textContent = 'Fitxer no és JSON vàlid.';
+    statusEl.textContent = isKml ? ('KML no vàlid: ' + err.message) : 'Fitxer no és JSON vàlid.';
+    return;
+  }
+  if(isKml && (!geojson.features || !geojson.features.length)){
+    statusEl.textContent = 'No s\'ha trobat cap geometria (Polygon/LineString/Point) al KML.';
     return;
   }
 
