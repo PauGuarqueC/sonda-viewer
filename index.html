@@ -1459,8 +1459,8 @@ function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, m
 // Eix de temperatures fix: en comptes d'ajustar-lo a les dades (que el feia
 // inestable i incomparable entre incendis), es fixa sempre al mateix rang
 // -- prou ampli per cobrir qualsevol sonda real que es pugui trobar.
-const SKEWT_TMIN_FIXED = -35;
-const SKEWT_TMAX_FIXED = 45;
+const SKEWT_TMIN_FIXED = -20;
+const SKEWT_TMAX_FIXED = 55;
 
 function computeSkewTRanges(sondes){
   let pMin = Infinity, pMax = -Infinity;
