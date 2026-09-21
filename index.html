@@ -335,7 +335,10 @@
           </div>
         </div>
         <div class="block">
-          <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 6px;">Skew-T</h3>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0;">Skew-T</h3>
+            <button type="button" id="downloadSkewtBtn" class="toggle-btn" style="margin-left:auto;">Descarrega imatge</button>
+          </div>
           <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; font-family:var(--font-mono); font-size:10.5px;">
             <select id="skewtSonda1" style="flex:1; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;"></select>
             <select id="skewtSonda2" style="flex:1; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;"></select>
@@ -1716,7 +1719,9 @@ function renderSkewT(){
     if(opts.preview) ctx.globalAlpha = 0.5;
 
     // linia de raó de mescla constant: superfície -> LCL (des de la Td)
-    ctx.strokeStyle = '#2e9e6b'; ctx.lineWidth = opts.preview ? 1.2 : 1.8; ctx.setLineDash([3, 3]);
+    // -- gris, per no confondre's amb els tons pastel (taronja/verd) de la
+    // graella de fons ni amb les corbes de dades de les sondes --
+    ctx.strokeStyle = '#555'; ctx.lineWidth = opts.preview ? 1.2 : 1.8; ctx.setLineDash([3, 3]);
     ctx.beginPath();
     let startedW = false;
     const wStep = Math.max(2, (pSfc - pLCL) / 30);
@@ -1731,7 +1736,7 @@ function renderSkewT(){
     ctx.setLineDash([]);
 
     // tram sec: superfície -> LCL (adiabàtica seca des de la T)
-    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = opts.preview ? 1.4 : 2.2;
+    ctx.strokeStyle = '#333'; ctx.lineWidth = opts.preview ? 1.4 : 2.2;
     ctx.beginPath();
     let started = false;
     const dryStep = Math.max(2, (pSfc - pLCL) / 30);
@@ -1744,7 +1749,7 @@ function renderSkewT(){
     ctx.stroke();
 
     // tram humit: LCL -> PMIN (adiabàtica saturada per sobre del LCL)
-    ctx.strokeStyle = '#1565c0'; ctx.lineWidth = opts.preview ? 1.4 : 2.2;
+    ctx.strokeStyle = '#333'; ctx.lineWidth = opts.preview ? 1.4 : 2.2;
     ctx.beginPath();
     let started2 = false;
     const wetStep = Math.max(2, (pLCL - PMIN) / 40);
@@ -1757,12 +1762,12 @@ function renderSkewT(){
 
     // el cursor mateix, marcat com el LCL (on conflueixen les dues corbes)
     const xL = toX(tLCL, pLCL), yL = toY(pLCL);
-    ctx.fillStyle = '#6a1b9a';
+    ctx.fillStyle = '#333';
     ctx.beginPath(); ctx.arc(xL, yL, opts.preview ? 3 : 4, 0, Math.PI * 2); ctx.fill();
     if(!opts.preview){
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
       ctx.font = '9px "Roboto Mono", monospace'; ctx.textAlign = 'left';
-      ctx.fillStyle = '#6a1b9a';
+      ctx.fillStyle = '#333';
       ctx.fillText(`LCL ${Math.round(pLCL)}mb`, xL + 6, yL - 4);
     }
 
@@ -2339,6 +2344,58 @@ function downloadChartsImage(){
   link.click();
 }
 document.getElementById('downloadChartsBtn').addEventListener('click', downloadChartsImage);
+
+function downloadSkewTImage(){
+  const canvas = document.getElementById('skewtCanvas');
+  if(!canvas) return;
+  const topMargin = 30, legendRowH = 26;
+  const w = canvas.width;
+  const h = topMargin + canvas.height + legendRowH;
+
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.fillStyle = '#2b2b2b';
+  ctx.font = '16px sans-serif';
+  const title = `Incendi ${INCENDI.incendi || ''} — Skew-T`;
+  ctx.fillText(title, 6, 22);
+
+  ctx.drawImage(canvas, 0, topMargin);
+
+  // llegenda sota el gràfic, nomes sondes mostrades al Skew-T
+  const swatchSize = 11;
+  const legendY = topMargin + canvas.height + 18;
+  const itemGap = 22;
+  ctx.font = '12px sans-serif';
+
+  const sel1 = document.getElementById('skewtSonda1').value;
+  const sel2 = document.getElementById('skewtSonda2').value;
+  const items = [sel1, sel2].filter(Boolean).map(id => {
+    const s = INCENDI.sondes.find(x => x.sond_id === id);
+    return { color: allSondaColors[id] || '#333', label: s ? `${s.tipus || '—'} — ${sondaLabel(id)}` : id };
+  });
+  const widths = items.map(it => swatchSize + 6 + ctx.measureText(it.label).width);
+  const totalW = widths.reduce((a, b) => a + b, 0) + itemGap * (items.length - 1);
+
+  let lx = (w - totalW) / 2;
+  items.forEach((it, i) => {
+    ctx.fillStyle = it.color;
+    ctx.fillRect(lx, legendY - swatchSize + 2, swatchSize, swatchSize);
+    ctx.fillStyle = '#2b2b2b';
+    ctx.fillText(it.label, lx + swatchSize + 6, legendY + 2);
+    lx += widths[i] + itemGap;
+  });
+
+  const link = document.createElement('a');
+  const safeName = (INCENDI.incendi || 'incendi').replace(/[^a-zA-Z0-9]+/g, '_');
+  link.download = `${safeName}_skewt.png`;
+  link.href = out.toDataURL('image/png');
+  link.click();
+}
+document.getElementById('downloadSkewtBtn').addEventListener('click', downloadSkewTImage);
 
 function renderAllCharts(){
   destroyCharts();
