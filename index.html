@@ -1534,7 +1534,15 @@ function computeSkewTRanges(sondes, plotW, plotH){
   // marge fix en píxels als dos costats, perquè el traçat no quedi enganxat
   // a la vora del quadre
   const padDeg = (28 / plotW) * D;
-  return { PMIN, PMAX, TMIN: TMIN - padDeg, TMAX: TMAX + padDeg };
+  TMIN -= padDeg; TMAX += padDeg;
+
+  // límit absolut de l'eix: mai per sota de -10°C ni per sobre de 50°C
+  // (rang habitual de les sondes d'incendi; evita finestres desmesurades
+  // en casos extrems sense afectar el calibratge físic anterior)
+  TMIN = Math.max(TMIN, -10);
+  TMAX = Math.min(TMAX, 50);
+
+  return { PMIN, PMAX, TMIN, TMAX };
 }
 
 function renderSkewT(){
