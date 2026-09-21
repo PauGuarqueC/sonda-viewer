@@ -620,6 +620,41 @@ let INCENDI = null;
 let currentSlug = null;
 let activeIds = new Set();
 
+// Cau de totes les sondes de TOTS els incendis (no nomes l'actual), per
+// poder fixar els eixos del SkewT de manera comparable entre incendis.
+// Es carrega en segon pla la primera vegada que cal (mateixa contrasenya
+// de visualitzacio que ja s'ha desbloquejat) i despres es reutilitza.
+let GLOBAL_SKEWT_SONDES = null;
+let globalSkewtLoadPromise = null;
+
+async function ensureGlobalSkewtSondes(){
+  if(GLOBAL_SKEWT_SONDES) return GLOBAL_SKEWT_SONDES;
+  if(globalSkewtLoadPromise) return globalSkewtLoadPromise;
+  globalSkewtLoadPromise = (async () => {
+    try{
+      const fetched = await fetchEncrypted('data/incendis_index.json.enc');
+      if(!fetched.exists) return null;
+      const items = await withViewKey(async (pw) => tryDecrypt(fetched.ciphertext, pw));
+      if(!items) return null;
+      const perIncendi = await Promise.all(items.map(async (it) => {
+        try{
+          const f = await fetchEncrypted('data/incendis/' + it.slug + '.json.enc');
+          if(!f.exists) return [];
+          const data = await withViewKey(async (pw) => tryDecrypt(f.ciphertext, pw));
+          return (data && data.sondes) ? data.sondes : [];
+        } catch(e){ return []; }
+      }));
+      GLOBAL_SKEWT_SONDES = perIncendi.flat();
+      return GLOBAL_SKEWT_SONDES;
+    } catch(e){
+      return null;
+    } finally {
+      globalSkewtLoadPromise = null;
+    }
+  })();
+  return globalSkewtLoadPromise;
+}
+
 // ============================================================
 // Perfil de model (Open-Meteo) — opcional, per superposar quan
 // no hi ha sonda ambient (o simplement per comparar).
@@ -1517,6 +1552,7 @@ function computeSkewTRanges(sondes, plotW, plotH){
 function renderSkewT(){
   const canvas = document.getElementById('skewtCanvas');
   const box = document.getElementById('skewtBox');
+  if(!canvas || !box || !INCENDI) return; // s'ha navegat fora de la vista d'incendi
   const dpr = window.devicePixelRatio || 1;
   const width = box.clientWidth, height = box.clientHeight;
   canvas.width = width * dpr; canvas.height = height * dpr;
@@ -1538,7 +1574,18 @@ function renderSkewT(){
   const marginLeft = 34, marginBottom = 26;
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
   const plotWForRanges = width - marginLeft - barbZoneWidth, plotHForRanges = height - marginBottom - 20;
-  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(sondes, plotWForRanges, plotHForRanges);
+  // Eixos fixos: calculats a partir de TOTES les sondes de TOTS els
+  // incendis (no nomes les dues escollides als desplegables, ni nomes les
+  // d'aquest incendi), perque no canviin en seleccionar una altra parella
+  // i el resultat sigui comparable entre incendis. Mentre el cau global
+  // encara no s'ha carregat (primer cop a la sessio), fem servir
+  // provisionalment nomes les sondes d'aquest incendi i tornem a dibuixar
+  // quan el cau global estigui llest.
+  if(!GLOBAL_SKEWT_SONDES){
+    ensureGlobalSkewtSondes().then(sondes => { if(sondes) renderSkewT(); });
+  }
+  const rangeSondes = (GLOBAL_SKEWT_SONDES || INCENDI.sondes).map(s => ({ s }));
+  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(rangeSondes, plotWForRanges, plotHForRanges);
   const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom, barbZoneWidth);
   const plotRight = width - barbZoneWidth;
   const plotBottom = height - marginBottom;
@@ -1737,9 +1784,21 @@ const DRIFT_COLOR_FIELDS = {
           color: (v) => valueColorBinned(v, RH_BOUNDS, RH_COLORS), bounds: RH_BOUNDS, colors: RH_COLORS }
 };
 
-function nearestProfileValue(s, altMsl, field){
+function nearestProfileValue(s, altMsl, field, isDescent){
+  const profile = s.profile || [];
+  if(!profile.length) return null;
+  // Distingim pujada i baixada dins del propi perfil (pel seu maxim
+  // d'alçada), perque un punt de baixada no es confongui amb un de pujada
+  // que passa per la mateixa alçada -- important per camps com la
+  // velocitat vertical, que canvien de signe entre trams.
+  let peakI = 0;
+  for(let i=1;i<profile.length;i++){
+    if((profile[i].alt_msl_m ?? -Infinity) > (profile[peakI].alt_msl_m ?? -Infinity)) peakI = i;
+  }
+  const phasePool = isDescent ? profile.slice(peakI) : profile.slice(0, peakI + 1);
+  const pool = phasePool.length ? phasePool : profile;
   let best = null, bestDist = Infinity;
-  for(const p of s.profile){
+  for(const p of pool){
     if(p[field] == null || p.alt_msl_m == null) continue;
     const d = Math.abs(p.alt_msl_m - altMsl);
     if(d < bestDist){ bestDist = d; best = p[field]; }
@@ -1775,8 +1834,11 @@ function renderDrift(){
   let minV = Infinity, maxV = -Infinity;
   sondes.forEach(({s}) => {
     const track = s.flight_path_3d || [];
-    const vals = track.map(([,,alt]) => {
-      const v = meta.profileField ? nearestProfileValue(s, alt, meta.profileField) : alt;
+    let trackPeakIdx = 0;
+    for(let i=1;i<track.length;i++){ if(track[i][2] > track[trackPeakIdx][2]) trackPeakIdx = i; }
+    const vals = track.map(([,,alt], i) => {
+      const isDescent = i > trackPeakIdx;
+      const v = meta.profileField ? nearestProfileValue(s, alt, meta.profileField, isDescent) : alt;
       if(v != null){ if(v < minV) minV = v; if(v > maxV) maxV = v; }
       return v;
     });
@@ -1826,9 +1888,9 @@ function renderDrift(){
       const isDescent = i > peakIdx;
       L.polyline([[lat0,lon0],[lat1,lon1]], {
         color: meta.color(v1, minV, maxV),
-        weight: isDescent ? 2.5 : 3.5,
-        opacity: isDescent ? 0.55 : 0.95,
-        dashArray: isDescent ? '6,5' : null
+        weight: isDescent ? 1.6 : 4,
+        opacity: isDescent ? 0.32 : 1,
+        dashArray: isDescent ? '3,6' : null
       }).addTo(driftMap);
     }
 
