@@ -1674,22 +1674,18 @@ function renderSkewT(){
     ctx.setLineDash([]);
   });
 
-  // --- LCL de cada sonda mostrada: marcador + linia de guia fins al marge ---
-  const lclLabels = [];
+  // --- LCL de cada sonda mostrada: es calcula aquí (dins el retallat, on
+  // encara tenim toX/toY a mà) però es dibuixa mes avall, com una petita
+  // marca a l'eix esquerre (costat de la pressio/alçada) en lloc d'una
+  // línia i un punt enmig del gràfic -- vegeu "marques del LCL a l'eix" ---
+  const sondeLclMarks = [];
   sondes.forEach(({s, color}) => {
     const sfc = (s.profile || []).find(p => p.temp_c != null && p.rh_pct != null && p.pressure_mb != null && p.rh_pct > 0);
     if(!sfc) return;
     const lcl = lclFromTRhP(sfc.temp_c, sfc.rh_pct, sfc.pressure_mb);
     if(!lcl) return;
-    const x = toX(lcl.T_LCL_C, lcl.P_LCL_mb), y = toY(lcl.P_LCL_mb);
-    ctx.strokeStyle = color; ctx.setLineDash([2, 2]); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(marginLeft, y); ctx.lineTo(x, y); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
     const altM = computeLCL(s);
-    lclLabels.push({ color, text: `LCL ${sondaLabel(s.sond_id)}: ${Math.round(lcl.P_LCL_mb)}mb${altM != null ? ' (~' + Math.round(altM) + 'm)' : ''}` });
+    sondeLclMarks.push({ color, pMb: lcl.P_LCL_mb, altM });
   });
 
   // --- trajectòria d'una parcel·la (windy-style): puja per l'adiabàtica
@@ -1809,6 +1805,19 @@ function renderSkewT(){
   ctx.strokeStyle = '#999';
   ctx.strokeRect(marginLeft, 20, plotRight - marginLeft, plotBottom - 20);
 
+  // --- marques del LCL a l'eix de pressió/alçada (esquerra): una petita
+  // marca travessant l'eix a l'alçada del LCL, amb l'etiqueta al costat --
+  // en lloc de la línia+punt enmig del gràfic d'abans ---
+  sondeLclMarks.forEach(({color, pMb, altM}) => {
+    if(pMb < PMIN || pMb > PMAX) return; // fora del rang visible
+    const y = toY(pMb);
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(marginLeft, y); ctx.lineTo(marginLeft + 8, y); ctx.stroke();
+    ctx.fillStyle = color; ctx.font = '8px "Roboto Mono", monospace'; ctx.textAlign = 'left';
+    const label = altM != null ? `LCL ${Math.round(altM)}m` : 'LCL';
+    ctx.fillText(label, marginLeft + 11, y + 3);
+  });
+
   // --- barbes de vent, una columna per sonda, a la franja reservada ---
   const barbColX = plotRight + 12;
   sondes.forEach(({s, color}, sIdx) => {
@@ -1836,12 +1845,6 @@ function renderSkewT(){
     const label = `${s.tipus} — ${sondaLabel(s.sond_id)}`;
     ctx.fillText(label, lx + 14, ly);
     ly += 14;
-  });
-  ctx.font = '9px "Roboto Mono", monospace';
-  lclLabels.forEach(({color, text}) => {
-    ctx.fillStyle = color; ctx.textAlign = 'left';
-    ctx.fillText(text, lx, ly);
-    ly += 12;
   });
 
   // geometria d'aquest render, per poder interpretar clics del ratolí
