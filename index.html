@@ -1483,17 +1483,35 @@ function computeSkewTRanges(sondes, plotW, plotH){
   // el biaix (l'eix es veia sempre massa ample, amb marges buits, perque
   // el mínim/màxim reals solen ser en alçada, no a la base, on s'etiqueta
   // l'eix).
+  //
+  // Aquesta iteracio nomes convergeix quan el quadre es prou ample respecte
+  // la seva alçada (si no, el desplaçament acumulat cap a la dreta pot
+  // superar l'amplada disponible i no existeix cap solucio -- la iteracio
+  // "explota" cap a valors absurds en lloc de convergir). Per garantir
+  // estabilitat sempre, nomes fem l'ajust fi quan es matematicament segur
+  // (K prou per sota d'1); en cas contrari, mantenim el comportament simple
+  // i sempre acotat (rang real ± marge fix), acceptant que en un quadre molt
+  // estret el traçat pugui quedar una mica retallat pels costats (el clip()
+  // ja ho gestiona) en lloc de desbocar l'eix.
   const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
   const fp = (p) => (lnPmax - Math.log(p)) / (lnPmax - lnPmin); // 0 a la base, 1 al cim
   const offsetPx = (p) => SKEW_PX_PER_PX * plotH * fp(p); // desplaçament, en píxels
   const rawTs = pts.map(pt => pt.tC);
-  let TMIN = Math.min(...rawTs), TMAX = Math.max(...rawTs);
-  for(let iter = 0; iter < 8; iter++){
-    const D = Math.max(5, TMAX - TMIN);
-    const degPerPx = D / plotW;
-    const screenT = pts.map(pt => pt.tC + offsetPx(pt.p) * degPerPx);
-    TMIN = Math.min(...screenT);
-    TMAX = Math.max(...screenT);
+  const K = (SKEW_PX_PER_PX * plotH) / plotW; // pitjor pendent possible (fp=1)
+  let TMIN, TMAX;
+  if(K < 0.8){
+    TMIN = Math.min(...rawTs); TMAX = Math.max(...rawTs);
+    for(let iter = 0; iter < 8; iter++){
+      const D = Math.max(5, TMAX - TMIN);
+      const degPerPx = D / plotW;
+      const screenT = pts.map(pt => pt.tC + offsetPx(pt.p) * degPerPx);
+      TMIN = Math.min(...screenT);
+      TMAX = Math.max(...screenT);
+    }
+  } else {
+    TMIN = Math.min(...rawTs) - 5;
+    TMAX = Math.max(...rawTs) + 5;
+    return { PMIN, PMAX, TMIN, TMAX };
   }
 
   // marge fix en píxels als dos costats, perquè el traçat no quedi enganxat
