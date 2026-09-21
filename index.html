@@ -1697,19 +1697,22 @@ function renderSkewT(){
     lclLabels.push({ color, text: `LCL ${sondaLabel(s.sond_id)}: ${Math.round(lcl.P_LCL_mb)}mb${altM != null ? ' (~' + Math.round(altM) + 'm)' : ''}` });
   });
 
-  // --- trajectòria interactiva d'una parcel·la (windy-style): en clicar un
-  // punt del gràfic es tria un nivell de partida, i des del panell de sota
-  // se'n pot editar la T i la Td a mà ("què passaria si...") -- puja per
-  // l'adiabàtica seca fins al LCL i despres per la saturada -- vegeu
-  // skewtParcelStart i el listener de clic més avall ---
-  if(skewtParcelStart){
-    const p0 = skewtParcelStart.pressure_mb, t0 = skewtParcelStart.tC, td0 = skewtParcelStart.tdC;
+  // --- trajectòria d'una parcel·la (windy-style): puja per l'adiabàtica
+  // seca fins al LCL i despres per la saturada, des d'un punt (p0, t0, td0)
+  // -- opts.preview la dibuixa fina i semitransparent, sense marcadors ni
+  // etiquetes (la vista en passar el cursor); si no, surt amb el traç
+  // sencer i marcadors (la parcel·la fixada, editable amb els sliders) ---
+  function drawParcelPath(p0, t0, td0, opts){
+    opts = opts || {};
     const theta0 = (t0 + 273.15) * Math.pow(1000 / p0, 0.286);
     const lcl = (td0 != null) ? lclFromTTd(t0, Math.min(td0, t0), p0) : null;
     const pLCL = (lcl && lcl.P_LCL_mb < p0) ? lcl.P_LCL_mb : PMIN;
 
+    ctx.save();
+    if(opts.preview) ctx.globalAlpha = 0.5;
+
     // tram sec: p0 -> pLCL (adiabàtica seca des del punt de partida)
-    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.2; ctx.setLineDash([]);
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = opts.preview ? 1.4 : 2.2; ctx.setLineDash([]);
     ctx.beginPath();
     let started = false;
     const dryStep = Math.max(2, (p0 - pLCL) / 30);
@@ -1723,7 +1726,7 @@ function renderSkewT(){
 
     // tram humit: pLCL -> PMIN (adiabàtica saturada per sobre del LCL)
     if(lcl && pLCL < p0){
-      ctx.strokeStyle = '#1565c0'; ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#1565c0'; ctx.lineWidth = opts.preview ? 1.4 : 2.2;
       ctx.beginPath();
       let started2 = false;
       const wetStep = Math.max(2, (pLCL - PMIN) / 40);
@@ -1734,23 +1737,44 @@ function renderSkewT(){
       }
       ctx.stroke();
 
-      ctx.fillStyle = '#6a1b9a';
       const xL = toX(lcl.T_LCL_C, pLCL), yL = toY(pLCL);
-      ctx.beginPath(); ctx.arc(xL, yL, 3.5, 0, Math.PI * 2); ctx.fill();
-      ctx.font = '9px "Roboto Mono", monospace'; ctx.textAlign = 'left';
       ctx.fillStyle = '#6a1b9a';
-      ctx.fillText(`LCL ${Math.round(pLCL)}mb`, xL + 6, yL - 4);
+      ctx.beginPath(); ctx.arc(xL, yL, opts.preview ? 2.5 : 3.5, 0, Math.PI * 2); ctx.fill();
+      if(!opts.preview){
+        ctx.font = '9px "Roboto Mono", monospace'; ctx.textAlign = 'left';
+        ctx.fillText(`LCL ${Math.round(pLCL)}mb`, xL + 6, yL - 4);
+      }
     }
 
-    ctx.fillStyle = '#c0392b';
-    const xS = toX(t0, p0), yS = toY(p0);
-    ctx.beginPath(); ctx.arc(xS, yS, 3.5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
-    if(td0 != null){
-      ctx.fillStyle = '#1565c0';
-      const xTd = toX(td0, p0);
-      ctx.beginPath(); ctx.arc(xTd, yS, 3, 0, Math.PI * 2); ctx.fill();
+    if(!opts.preview){
+      ctx.fillStyle = '#c0392b';
+      const xS = toX(t0, p0), yS = toY(p0);
+      ctx.beginPath(); ctx.arc(xS, yS, 3.5, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+      if(td0 != null){
+        ctx.fillStyle = '#1565c0';
+        const xTd = toX(td0, p0);
+        ctx.beginPath(); ctx.arc(xTd, yS, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // parcel·la fixada (clic + sliders editables) -- té prioritat visual
+  if(skewtParcelStart){
+    drawParcelPath(skewtParcelStart.pressure_mb, skewtParcelStart.tC, skewtParcelStart.tdC, {});
+  } else if(skewtParcelHover){
+    // vista ràpida en passar el cursor (windy-style): dades reals del
+    // nivell més proper, sense fixar ni editar res -- vegeu wireSkewtHover
+    const id = document.getElementById('skewtSonda1').value;
+    const s = INCENDI.sondes.find(x => x.sond_id === id);
+    const prof = s && (s.profile || []).filter(pt => pt.pressure_mb != null && pt.temp_c != null);
+    if(prof && prof.length){
+      let best = prof[0], bestD = Infinity;
+      prof.forEach(pt => { const d = Math.abs(pt.pressure_mb - skewtParcelHover.pressure_mb); if(d < bestD){ bestD = d; best = pt; } });
+      const td = dewpointC(best.temp_c, best.rh_pct);
+      drawParcelPath(best.pressure_mb, best.temp_c, td != null ? Math.min(td, best.temp_c) : null, { preview: true });
     }
   }
 
@@ -1813,9 +1837,25 @@ function renderSkewT(){
 }
 
 // { pressure_mb, tC, tdC } -- nivell i valors (editables) de la parcel·la
-// interactiva, o null si no se n'ha triat cap encara.
+// interactiva un cop FIXADA (clicant), o null si no se n'ha fixat cap.
 let skewtParcelStart = null;
+// { pressure_mb } -- nivell sota el cursor mentre es passa per sobre del
+// gràfic (windy-style), nomes per a la vista ràpida amb dades reals; es
+// perd en treure el ratolí. Nul quan ja hi ha una parcel·la fixada.
+let skewtParcelHover = null;
 let skewtLastGeom = null;
+
+function pressureFromClientY(canvas, clientY){
+  if(!skewtLastGeom) return null;
+  const { PMIN, PMAX, marginBottom, height } = skewtLastGeom;
+  const rect = canvas.getBoundingClientRect();
+  const y = clientY - rect.top;
+  const plotH = height - marginBottom - 20;
+  const frac = (y - 20) / plotH;
+  if(frac < 0 || frac > 1) return null;
+  const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
+  return Math.exp(lnPmin + frac * (lnPmax - lnPmin));
+}
 
 function updateSkewtParcelPanel(){
   const panel = document.getElementById('skewtParcelPanel');
@@ -1837,16 +1877,27 @@ function wireSkewtClick(){
   if(!canvas || canvas.__skewtClickWired) return;
   canvas.__skewtClickWired = true;
   canvas.style.cursor = 'crosshair';
+
+  // --- pas del cursor per sobre (windy-style): vista ràpida amb les
+  // dades reals del nivell mes proper, sense fixar res -- es perd en
+  // treure el ratolí, i no es mostra si ja hi ha una parcel·la fixada
+  // (per no encavalcar-la) ---
+  canvas.addEventListener('mousemove', (ev) => {
+    if(skewtParcelStart) return; // ja n'hi ha una de fixada -- no distreure-hi la vista ràpida
+    const p = pressureFromClientY(canvas, ev.clientY);
+    if(p == null){ if(skewtParcelHover){ skewtParcelHover = null; renderSkewT(); } return; }
+    skewtParcelHover = { pressure_mb: p };
+    renderSkewT();
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if(skewtParcelHover){ skewtParcelHover = null; renderSkewT(); }
+  });
+
+  // --- clic: fixa el nivell de sota el cursor com a parcel·la editable
+  // (obre el panell amb els sliders de T/Td) ---
   canvas.addEventListener('click', (ev) => {
-    if(!skewtLastGeom) return;
-    const { PMIN, PMAX, marginBottom, height } = skewtLastGeom;
-    const rect = canvas.getBoundingClientRect();
-    const y = ev.clientY - rect.top;
-    const plotH = height - marginBottom - 20;
-    const frac = (y - 20) / plotH;
-    if(frac < 0 || frac > 1) return;
-    const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
-    const p = Math.exp(lnPmin + frac * (lnPmax - lnPmin));
+    const p = pressureFromClientY(canvas, ev.clientY);
+    if(p == null) return;
 
     // el nivell de partida es tria clicant, però sempre a partir de la
     // sonda 1 (primer desplegable) -- la T/Td reals d'allà nomes serveixen
@@ -1860,6 +1911,7 @@ function wireSkewtClick(){
     prof.forEach(pt => { const d = Math.abs(pt.pressure_mb - p); if(d < bestD){ bestD = d; best = pt; } });
 
     const td = dewpointC(best.temp_c, best.rh_pct);
+    skewtParcelHover = null;
     skewtParcelStart = { pressure_mb: best.pressure_mb, tC: best.temp_c, tdC: td != null ? Math.min(td, best.temp_c) : best.temp_c - 2 };
     updateSkewtParcelPanel();
     renderSkewT();
