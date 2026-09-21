@@ -348,8 +348,12 @@
             <div class="dual-slider"><input type="range" id="sliderSkewtPMin"><input type="range" id="sliderSkewtPMax"></div>
             <span class="readout"><span id="sliderSkewtPMinVal"></span>–<span id="sliderSkewtPMaxVal"></span></span>
           </div>
+          <div class="mini-slider" style="max-width:340px;">
+            <span>desplaça T</span>
+            <input type="range" id="sliderSkewtTShift" style="flex:1;">
+            <span class="readout"><span id="sliderSkewtTShiftVal"></span>°C</span>
+          </div>
           <div id="skewtBox" style="width:100%; aspect-ratio: 8 / 5; min-height:220px; max-height:520px; position:relative;"><canvas id="skewtCanvas"></canvas></div>
-          <div style="font-size:9.5px; color:var(--text-dim); margin-top:3px;">el cursor és el LCL: mou-lo per qualsevol punt del gràfic i es calculen, en directe, la T i la Td que hi hauria d'haver en superfície perquè una parcel·la saturi exactament allà — clica per fixar-ho</div>
           <div id="skewtParcelPanel" style="display:none; margin-top:6px; padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;">
             <div style="display:flex; justify-content:space-between; align-items:center; color:var(--text-dim);">
               <span>LCL <span id="skewtParcelLclP"></span>mb — superfície (<span id="skewtParcelSfcP"></span>mb): T <span id="skewtParcelSfcT"></span>°C, Td <span id="skewtParcelSfcTd"></span>°C</span>
@@ -1499,6 +1503,12 @@ function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, m
 // esquerres), en lloc de quedar-hi descalibrat.
 const SKEWT_TEMP_ANCHOR_C = 17.5; // centre de l'eix de temperatures (mitjana de l'antic -10..45 fix)
 let skewtAxisOverride = { PMIN: 350, PMAX: 1000 };
+// desplaçament (°C) del centre de l'eix de temperatures, per l'slider
+// "desplaça T": mou l'eix sencer cap a la dreta o l'esquerra sense
+// tocar-ne l'amplada D (que ve fixada per la calibratge físic segons el
+// rang de pressió), per poder recentrar quan un perfil queda tallat
+// a un costat del gràfic
+let skewtTempShift = 0;
 
 function computeSkewTRanges(sondes, plotW, plotH){
   const { PMIN, PMAX } = skewtAxisOverride;
@@ -1512,7 +1522,8 @@ function computeSkewTRanges(sondes, plotW, plotH){
   const degPerPx = dTDry / (2 * pxSpan);
   const D = Math.max(5, degPerPx * plotW);
 
-  return { PMIN, PMAX, TMIN: SKEWT_TEMP_ANCHOR_C - D / 2, TMAX: SKEWT_TEMP_ANCHOR_C + D / 2 };
+  const center = SKEWT_TEMP_ANCHOR_C + skewtTempShift;
+  return { PMIN, PMAX, TMIN: center - D / 2, TMAX: center + D / 2 };
 }
 
 function initSkewtAxisSliders(){
@@ -1541,6 +1552,22 @@ function initSkewtAxisSliders(){
   });
 }
 initSkewtAxisSliders();
+
+function initSkewtTempShiftSlider(){
+  const input = document.getElementById('sliderSkewtTShift');
+  const valEl = document.getElementById('sliderSkewtTShiftVal');
+  if(!input || !valEl) return;
+  const lo = -25, hi = 25, step = 1;
+  input.min = lo; input.max = hi; input.step = step;
+  input.value = skewtTempShift;
+  valEl.textContent = skewtTempShift;
+  input.addEventListener('input', () => {
+    skewtTempShift = parseFloat(input.value);
+    valEl.textContent = skewtTempShift;
+    renderSkewT();
+  });
+}
+initSkewtTempShiftSlider();
 
 function renderSkewT(){
   const canvas = document.getElementById('skewtCanvas');
