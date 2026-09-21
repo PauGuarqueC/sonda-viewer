@@ -620,41 +620,6 @@ let INCENDI = null;
 let currentSlug = null;
 let activeIds = new Set();
 
-// Cau de totes les sondes de TOTS els incendis (no nomes l'actual), per
-// poder fixar els eixos del SkewT de manera comparable entre incendis.
-// Es carrega en segon pla la primera vegada que cal (mateixa contrasenya
-// de visualitzacio que ja s'ha desbloquejat) i despres es reutilitza.
-let GLOBAL_SKEWT_SONDES = null;
-let globalSkewtLoadPromise = null;
-
-async function ensureGlobalSkewtSondes(){
-  if(GLOBAL_SKEWT_SONDES) return GLOBAL_SKEWT_SONDES;
-  if(globalSkewtLoadPromise) return globalSkewtLoadPromise;
-  globalSkewtLoadPromise = (async () => {
-    try{
-      const fetched = await fetchEncrypted('data/incendis_index.json.enc');
-      if(!fetched.exists) return null;
-      const items = await withViewKey(async (pw) => tryDecrypt(fetched.ciphertext, pw));
-      if(!items) return null;
-      const perIncendi = await Promise.all(items.map(async (it) => {
-        try{
-          const f = await fetchEncrypted('data/incendis/' + it.slug + '.json.enc');
-          if(!f.exists) return [];
-          const data = await withViewKey(async (pw) => tryDecrypt(f.ciphertext, pw));
-          return (data && data.sondes) ? data.sondes : [];
-        } catch(e){ return []; }
-      }));
-      GLOBAL_SKEWT_SONDES = perIncendi.flat();
-      return GLOBAL_SKEWT_SONDES;
-    } catch(e){
-      return null;
-    } finally {
-      globalSkewtLoadPromise = null;
-    }
-  })();
-  return globalSkewtLoadPromise;
-}
-
 // ============================================================
 // Perfil de model (Open-Meteo) — opcional, per superposar quan
 // no hi ha sonda ambient (o simplement per comparar).
@@ -1491,17 +1456,19 @@ function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, m
   return { toX, toY, plotW, plotH, marginLeft, marginBottom };
 }
 
-function computeSkewTRanges(sondes, plotW, plotH){
+// Eix de temperatures fix: en comptes d'ajustar-lo a les dades (que el feia
+// inestable i incomparable entre incendis), es fixa sempre al mateix rang
+// -- prou ampli per cobrir qualsevol sonda real que es pugui trobar.
+const SKEWT_TMIN_FIXED = -35;
+const SKEWT_TMAX_FIXED = 45;
+
+function computeSkewTRanges(sondes){
   let pMin = Infinity, pMax = -Infinity;
-  const pts = []; // { tC, p } de cada mostra real (temperatura i punt de rosada)
   sondes.forEach(({s}) => {
     (s.profile || []).forEach(p => {
       if(p.pressure_mb == null) return;
       if(p.pressure_mb < pMin) pMin = p.pressure_mb;
       if(p.pressure_mb > pMax) pMax = p.pressure_mb;
-      if(p.temp_c != null) pts.push({ tC: p.temp_c, p: p.pressure_mb });
-      const td = dewpointC(p.temp_c, p.rh_pct);
-      if(td != null) pts.push({ tC: td, p: p.pressure_mb });
     });
   });
   if(!isFinite(pMin)){ pMin = 300; pMax = 1000; }
@@ -1510,43 +1477,7 @@ function computeSkewTRanges(sondes, plotW, plotH){
   const PMAX = Math.ceil(pMax / 50) * 50;
   const PMIN = Math.max(50, Math.floor(pMin / 50) * 50 - 50);
 
-  if(!pts.length){
-    return { PMIN, PMAX, TMIN: -20, TMAX: 40 };
-  }
-
-  // La transformacio de dibuix (makeSkewTTransform) desplaça cada punt cap
-  // a la dreta en pujar, skewSlope píxels per cada píxel d'alçada (com a
-  // màxim 45°, vegeu computeSkewTSlope -- ja ve limitat perquè mai superi
-  // un marge de seguretat respecte l'amplada disponible, així aquesta
-  // iteracio SEMPRE convergeix, sigui quina sigui la geometria del quadre).
-  // Per triar TMIN/TMAX convertim aquest desplaçament (en píxels) a graus
-  // equivalents fent servir l'escala de l'eix (graus/píxel), que depèn del
-  // propi rang que estem triant -- per això ho resolem per iteracio: a cada
-  // volta calculem on cauria realment cada punt (temp. i punt de rosada)
-  // amb el rang actual, i n'ajustem els limits perque el punt mes extrem
-  // (allà on sigui, en alçada) quedi vora el marge del gràfic -- en lloc
-  // d'agafar el valor en brut, que quedava despenjat del traçat real un
-  // cop aplicat el biaix.
-  const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
-  const fp = (p) => (lnPmax - Math.log(p)) / (lnPmax - lnPmin); // 0 a la base, 1 al cim
-  const skewSlope = computeSkewTSlope(plotW, plotH);
-  const offsetPx = (p) => skewSlope * plotH * fp(p); // desplaçament, en píxels
-  const rawTs = pts.map(pt => pt.tC);
-  let TMIN = Math.min(...rawTs), TMAX = Math.max(...rawTs);
-  for(let iter = 0; iter < 8; iter++){
-    const D = Math.max(5, TMAX - TMIN);
-    const degPerPx = D / plotW;
-    const screenT = pts.map(pt => pt.tC + offsetPx(pt.p) * degPerPx);
-    TMIN = Math.min(...screenT);
-    TMAX = Math.max(...screenT);
-  }
-
-  // marge fix en píxels als dos costats, perquè el traçat no quedi enganxat
-  // a la vora del quadre (no "graus arrodonits a 5", que amb l'ajust ja tan
-  // ajustat tornaria a deixar un buit gran com abans)
-  const D = Math.max(5, TMAX - TMIN);
-  const padDeg = (28 / plotW) * D;
-  return { PMIN, PMAX, TMIN: TMIN - padDeg, TMAX: TMAX + padDeg };
+  return { PMIN, PMAX, TMIN: SKEWT_TMIN_FIXED, TMAX: SKEWT_TMAX_FIXED };
 }
 
 function renderSkewT(){
@@ -1573,19 +1504,10 @@ function renderSkewT(){
 
   const marginLeft = 34, marginBottom = 26;
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
-  const plotWForRanges = width - marginLeft - barbZoneWidth, plotHForRanges = height - marginBottom - 20;
-  // Eixos fixos: calculats a partir de TOTES les sondes de TOTS els
-  // incendis (no nomes les dues escollides als desplegables, ni nomes les
-  // d'aquest incendi), perque no canviin en seleccionar una altra parella
-  // i el resultat sigui comparable entre incendis. Mentre el cau global
-  // encara no s'ha carregat (primer cop a la sessio), fem servir
-  // provisionalment nomes les sondes d'aquest incendi i tornem a dibuixar
-  // quan el cau global estigui llest.
-  if(!GLOBAL_SKEWT_SONDES){
-    ensureGlobalSkewtSondes().then(sondes => { if(sondes) renderSkewT(); });
-  }
-  const rangeSondes = (GLOBAL_SKEWT_SONDES || INCENDI.sondes).map(s => ({ s }));
-  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(rangeSondes, plotWForRanges, plotHForRanges);
+  // Rang de pressio: de les sondes d'aquest incendi. Rang de temperatures:
+  // fix (vegeu SKEWT_TMIN_FIXED / SKEWT_TMAX_FIXED).
+  const rangeSondes = INCENDI.sondes.map(s => ({ s }));
+  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(rangeSondes);
   const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom, barbZoneWidth);
   const plotRight = width - barbZoneWidth;
   const plotBottom = height - marginBottom;
