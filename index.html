@@ -247,17 +247,8 @@
       </div>
 
       <div class="sidebar-note" style="border-top:1px solid var(--panel-border); margin-top:14px; padding-top:12px;">
-        <label style="display:flex; align-items:center; gap:6px; font-weight:500; color:var(--text);">
-          <input type="checkbox" id="modelToggle">
-          Afegeix perfil de model
-        </label>
-        <select id="modelSelect" style="width:100%; margin-top:6px; font-family:var(--font-mono); font-size:11px; padding:4px; border:1px solid var(--panel-border); border-radius:4px; display:none;">
-          <option value="icon_eu">ICON-EU</option>
-          <option value="meteofrance_arome_france">AROME França</option>
-          <option value="ecmwf_ifs025">ECMWF IFS (0.25°)</option>
-          <option value="era5">ERA5 (CDS)</option>
-        </select>
-        <div id="modelStatus" style="margin-top:6px; font-size:10.5px;"></div>
+        <div style="font-weight:500; color:var(--text); margin-bottom:6px;">Perfils de model</div>
+        <div id="modelCheckList"></div>
       </div>
     </div>
 
@@ -641,12 +632,57 @@ let activeIds = new Set();
 
 // ============================================================
 // Perfil de model (Open-Meteo) — opcional, per superposar quan
-// no hi ha sonda ambient (o simplement per comparar).
+// no hi ha sonda ambient (o simplement per comparar). Es poden tenir
+// diversos models actius alhora (una casella per cadascun, en lloc
+// d'un desplegable que en substituïa un per l'altre), per poder-los
+// comparar entre ells.
 // ============================================================
-let modelData = null; // { label, profile: [{alt_msl_m, theta_v_k, rh_pct, wind_speed_ms, wind_dir_deg}] }
+let modelDataMap = {}; // modelParam -> { label, profile: [...], color } | (absent si no actiu/sense dades)
 
 const MODEL_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100];
-const MODEL_LABELS = { icon_eu: 'ICON-EU', meteofrance_arome_france: 'AROME França', ecmwf_ifs025: 'ECMWF IFS (0.25°)' };
+const MODEL_DEFS = [
+  { key: 'icon_eu', label: 'ICON-EU', color: '#8a8a8a' },
+  { key: 'meteofrance_arome_france', label: 'AROME França', color: '#5b8c5a' },
+  { key: 'ecmwf_ifs025', label: 'ECMWF IFS (0.25°)', color: '#8e5ba0' },
+  { key: 'era5', label: 'ERA5 (CDS)', color: '#c9962c' },
+];
+const MODEL_LABELS = Object.fromEntries(MODEL_DEFS.map(m => [m.key, m.label]));
+function modelColor(key){
+  const def = MODEL_DEFS.find(m => m.key === key);
+  return def ? def.color : '#888888';
+}
+
+function setModelStatus(key, text){
+  const el = document.querySelector(`[data-model-status="${key}"]`);
+  if(el) el.textContent = text;
+}
+
+function buildModelCheckboxes(){
+  const list = document.getElementById('modelCheckList');
+  if(!list) return;
+  list.innerHTML = MODEL_DEFS.map(m => `
+    <div style="margin-bottom:5px;">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+        <input type="checkbox" data-model="${m.key}">
+        <span class="swatch" style="background:${m.color};"></span>
+        <span>${m.label}</span>
+      </label>
+      <div class="model-status" data-model-status="${m.key}" style="margin:2px 0 0 22px; font-size:10px; color:var(--text-dim);"></div>
+    </div>`).join('');
+  list.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const key = cb.dataset.model;
+      if(cb.checked){
+        loadModelProfile(key);
+      } else {
+        delete modelDataMap[key];
+        setModelStatus(key, '');
+        renderAllCharts();
+      }
+    });
+  });
+}
+buildModelCheckboxes();
 
 function thetaVFromTRhP(tempC, rhPct, pressureHpa){
   if(tempC == null || rhPct == null || pressureHpa == null || pressureHpa <= 0) return null;
@@ -724,14 +760,12 @@ async function queryModelHost(host, modelParam, ref, launchDt, dateStr){
   return { profile, targetHour };
 }
 
-async function loadModelProfile(){
-  const modelParam = document.getElementById('modelSelect').value;
-  const statusEl = document.getElementById('modelStatus');
+async function loadModelProfile(modelParam){
   const ref = getModelReferenceSonde();
 
   if(!ref || !ref.launch){
-    statusEl.textContent = 'Cap sonda activa amb punt de llançament conegut.';
-    modelData = null;
+    setModelStatus(modelParam, 'Cap sonda activa amb punt de llançament conegut.');
+    delete modelDataMap[modelParam];
     renderAllCharts();
     return;
   }
@@ -741,11 +775,11 @@ async function loadModelProfile(){
     // propia sonda quan es va processar la pujada, perque nomes esta
     // disponible per sondes prou antigues (retard tipic d'uns dies).
     if(ref.era5_profile && ref.era5_profile.length){
-      modelData = { label: 'ERA5 (CDS)', profile: ref.era5_profile };
-      statusEl.textContent = 'ERA5 (CDS) · reanàlisi';
+      modelDataMap[modelParam] = { label: 'ERA5 (CDS)', profile: ref.era5_profile, color: modelColor(modelParam) };
+      setModelStatus(modelParam, 'ERA5 (CDS) · reanàlisi');
     } else {
-      modelData = null;
-      statusEl.textContent = 'ERA5 no disponible per aquesta sonda (era massa recent quan es va processar, o el CDS no va respondre en aquell moment).';
+      delete modelDataMap[modelParam];
+      setModelStatus(modelParam, 'ERA5 no disponible per aquesta sonda (era massa recent quan es va processar, o el CDS no va respondre en aquell moment).');
     }
     renderAllCharts();
     return;
@@ -753,8 +787,8 @@ async function loadModelProfile(){
 
   const launchDt = parseLaunchDateTime(ref);
   if(!launchDt || isNaN(launchDt)){
-    statusEl.textContent = 'No s\'ha pogut determinar la data/hora de llançament.';
-    modelData = null;
+    setModelStatus(modelParam, 'No s\'ha pogut determinar la data/hora de llançament.');
+    delete modelDataMap[modelParam];
     renderAllCharts();
     return;
   }
@@ -770,39 +804,23 @@ async function loadModelProfile(){
     ? ['https://api.open-meteo.com', 'https://historical-forecast-api.open-meteo.com']
     : ['https://historical-forecast-api.open-meteo.com', 'https://api.open-meteo.com'];
 
-  statusEl.textContent = 'Carregant...';
+  setModelStatus(modelParam, 'Carregant...');
   let lastErr = null;
   for(const host of hosts){
     try{
       const { profile, targetHour } = await queryModelHost(host, modelParam, ref, launchDt, dateStr);
-      modelData = { label: MODEL_LABELS[modelParam] || modelParam, profile };
-      statusEl.textContent = `${MODEL_LABELS[modelParam]} · ${dateStr} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`;
+      modelDataMap[modelParam] = { label: MODEL_LABELS[modelParam] || modelParam, profile, color: modelColor(modelParam) };
+      setModelStatus(modelParam, `${dateStr} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`);
       renderAllCharts();
       return;
     } catch(err){
       lastErr = err;
     }
   }
-  modelData = null;
-  statusEl.textContent = 'Error: ' + (lastErr ? lastErr.message : 'desconegut');
+  delete modelDataMap[modelParam];
+  setModelStatus(modelParam, 'Error: ' + (lastErr ? lastErr.message : 'desconegut'));
   renderAllCharts();
 }
-
-
-document.getElementById('modelToggle').addEventListener('change', (e) => {
-  const select = document.getElementById('modelSelect');
-  select.style.display = e.target.checked ? 'block' : 'none';
-  if(e.target.checked){
-    loadModelProfile();
-  } else {
-    modelData = null;
-    document.getElementById('modelStatus').textContent = '';
-    renderAllCharts();
-  }
-});
-document.getElementById('modelSelect').addEventListener('change', () => {
-  if(document.getElementById('modelToggle').checked) loadModelProfile();
-});
 
 let axisMax = { theta: null, rh: 100, wind: null, rise: null };
 let axisDataDefault = {};
@@ -832,10 +850,9 @@ async function openIncendi(slug){
   currentSlug = slug;
   document.getElementById('incendiName').textContent = '…';
   document.getElementById('sondaList').innerHTML = '';
-  modelData = null;
-  document.getElementById('modelToggle').checked = false;
-  document.getElementById('modelSelect').style.display = 'none';
-  document.getElementById('modelStatus').textContent = '';
+  modelDataMap = {};
+  document.querySelectorAll('#modelCheckList input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('#modelCheckList .model-status').forEach(el => { el.textContent = ''; });
 
   const fetched = await fetchEncrypted('data/incendis/' + slug + '.json.enc');
   if(!fetched.exists){
@@ -1268,17 +1285,16 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
     borderColor: color, backgroundColor: 'transparent',
     borderWidth: 2, borderDash: dash, pointRadius: 0, tension: 0.15, parsing: false
   }));
-  if(modelData){
-    const mdata = modelData.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.alt_msl_m}));
-    if(mdata.length){
-      datasets.push({
-        label: `model (${modelData.label})`,
-        data: mdata,
-        borderColor: '#888888', backgroundColor: 'transparent',
-        borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.15, parsing: false
-      });
-    }
-  }
+  Object.values(modelDataMap).forEach(md => {
+    const mdata = md.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.alt_msl_m}));
+    if(!mdata.length) return;
+    datasets.push({
+      label: `model (${md.label})`,
+      data: mdata,
+      borderColor: md.color, backgroundColor: 'transparent',
+      borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.15, parsing: false
+    });
+  });
 
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {
@@ -1382,17 +1398,16 @@ function makeWindChart(){
     data: s.profile.filter(p=>p.wind_speed_ms!=null).map(p=>({x:p.wind_speed_ms, y:p.alt_msl_m})),
     borderColor: color, backgroundColor:'transparent', borderWidth:2, borderDash: dash, pointRadius:0, tension:0.15, parsing:false
   }));
-  if(modelData){
-    const mdata = modelData.profile.filter(p => p.wind_speed_ms != null).map(p => ({x: p.wind_speed_ms, y: p.alt_msl_m}));
-    if(mdata.length){
-      datasets.push({
-        type: 'line', label: `model (${modelData.label})`,
-        data: mdata,
-        borderColor: '#888888', backgroundColor: 'transparent',
-        borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.15, parsing: false
-      });
-    }
-  }
+  Object.values(modelDataMap).forEach(md => {
+    const mdata = md.profile.filter(p => p.wind_speed_ms != null).map(p => ({x: p.wind_speed_ms, y: p.alt_msl_m}));
+    if(!mdata.length) return;
+    datasets.push({
+      type: 'line', label: `model (${md.label})`,
+      data: mdata,
+      borderColor: md.color, backgroundColor: 'transparent',
+      borderWidth: 2, borderDash: [4, 3], pointRadius: 0, tension: 0.15, parsing: false
+    });
+  });
 
   const ctx = document.getElementById('chartWind').getContext('2d');
   return new Chart(ctx, {
