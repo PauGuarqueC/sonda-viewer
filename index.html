@@ -1456,19 +1456,17 @@ function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, m
   return { toX, toY, plotW, plotH, marginLeft, marginBottom };
 }
 
-// Eix de temperatures fix: en comptes d'ajustar-lo a les dades (que el feia
-// inestable i incomparable entre incendis), es fixa sempre al mateix rang
-// -- prou ampli per cobrir qualsevol sonda real que es pugui trobar.
-const SKEWT_TMIN_FIXED = -20;
-const SKEWT_TMAX_FIXED = 55;
-
-function computeSkewTRanges(sondes){
+function computeSkewTRanges(sondes, plotW, plotH){
   let pMin = Infinity, pMax = -Infinity;
+  const pts = []; // { tC, p } de cada mostra real (temperatura i punt de rosada)
   sondes.forEach(({s}) => {
     (s.profile || []).forEach(p => {
       if(p.pressure_mb == null) return;
       if(p.pressure_mb < pMin) pMin = p.pressure_mb;
       if(p.pressure_mb > pMax) pMax = p.pressure_mb;
+      if(p.temp_c != null) pts.push({ tC: p.temp_c, p: p.pressure_mb });
+      const td = dewpointC(p.temp_c, p.rh_pct);
+      if(td != null) pts.push({ tC: td, p: p.pressure_mb });
     });
   });
   if(!isFinite(pMin)){ pMin = 300; pMax = 1000; }
@@ -1477,7 +1475,66 @@ function computeSkewTRanges(sondes){
   const PMAX = Math.ceil(pMax / 50) * 50;
   const PMIN = Math.max(50, Math.floor(pMin / 50) * 50 - 50);
 
-  return { PMIN, PMAX, TMIN: SKEWT_TMIN_FIXED, TMAX: SKEWT_TMAX_FIXED };
+  if(!pts.length){
+    return { PMIN, PMAX, TMIN: -20, TMAX: 40 };
+  }
+
+  // NOTA: un rang de temperatures fix (p.ex. sempre -35..45) es va provar i
+  // es va descartar -- amb vols curts (poc rang de pressio) el mateix biaix
+  // en píxels queda "dilüit" en un eix tan ample i la sonda es veu gairebe
+  // vertical, no eskewejada.
+  //
+  // Tampoc n'hi ha prou ajustant l'escala als propis valors de la sonda
+  // (com es feia abans, per iteracio): això sempre fa que el traçat s'obri
+  // fins a "omplir" l'amplada disponible, sense distingir en quin SENTIT
+  // s'ha d'inclinar. Físicament, en un skew-T log-P les isotermes (T
+  // constant) s'inclinen cap a la DRETA en pujar, i les adiabàtiques seques
+  // (mescla ben remoguda / molt inestable) s'han d'inclinar cap a
+  // l'ESQUERRA -- oposades entre si. Amb un ajust purament basat en les
+  // dades, una sonda gairebé adiabàtica seca sortia gairebé vertical (o
+  // fins i tot inclinada a la dreta, com les isotermes) en lloc de cap a
+  // l'esquerra, que és el que li toca.
+  //
+  // Per això l'escala graus/píxel es fixa aquí a partir de la FÍSICA (la
+  // mateixa formula de l'adiabàtica seca que ja es fa servir per dibuixar
+  // les corbes de fons), no de les dades: es tria perquè una adiabàtica
+  // seca de referència es desplaci, de la base al cim, exactament els
+  // mateixos píxels que una isoterma -- però en sentit contrari. Això
+  // reprodueix el conveni estàndard d'un skew-T (isotermes dretes,
+  // adiabàtiques esquerres) siguin quines siguin les dades concretes.
+  const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
+  const fp = (p) => (lnPmax - Math.log(p)) / (lnPmax - lnPmin); // 0 a la base, 1 al cim
+  const skewSlope = computeSkewTSlope(plotW, plotH);
+  const offsetPx = (p) => skewSlope * plotH * fp(p); // desplaçament, en píxels
+  const pxSpan = skewSlope * plotH; // desplaçament total, base -> cim (com una isoterma)
+
+  const thetaRef = 300; // K, adiabàtica seca de referència, purament pel calibratge
+  const tDryBase = thetaRef * Math.pow(PMAX / 1000, 0.286) - 273.15;
+  const tDryTop = thetaRef * Math.pow(PMIN / 1000, 0.286) - 273.15;
+  const dTDry = Math.max(0.01, tDryBase - tDryTop); // graus que perd l'adiabàtica, base->cim
+
+  // degPerPx tal que l'adiabàtica de referència recorri -pxSpan (esquerra)
+  // en horitzontal, base->cim, exactament com una isoterma en recorre
+  // +pxSpan (dreta): dx = -dTDry/degPerPx + pxSpan = -pxSpan  =>  ...
+  const degPerPx = dTDry / (2 * pxSpan);
+
+  // amb l'escala ja fixada físicament, l'amplada de l'eix (en graus) surt
+  // directa de l'amplada del quadre -- ja no cal iterar
+  const baseD = Math.max(5, degPerPx * plotW);
+
+  // centrem la finestra sobre les dades reals (temp. i punt de rosada)
+  // d'aquesta sonda, per no tallar cap traçat -- però sense tornar a
+  // canviar l'escala en funció d'elles, només la posició
+  const screenT = pts.map(pt => pt.tC + offsetPx(pt.p) * degPerPx);
+  const dataMin = Math.min(...screenT), dataMax = Math.max(...screenT);
+  const D = Math.max(baseD, dataMax - dataMin);
+  const center = (dataMin + dataMax) / 2;
+  let TMIN = center - D / 2, TMAX = center + D / 2;
+
+  // marge fix en píxels als dos costats, perquè el traçat no quedi enganxat
+  // a la vora del quadre
+  const padDeg = (28 / plotW) * D;
+  return { PMIN, PMAX, TMIN: TMIN - padDeg, TMAX: TMAX + padDeg };
 }
 
 function renderSkewT(){
@@ -1504,10 +1561,12 @@ function renderSkewT(){
 
   const marginLeft = 34, marginBottom = 26;
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
-  // Rang de pressio: de les sondes d'aquest incendi. Rang de temperatures:
-  // fix (vegeu SKEWT_TMIN_FIXED / SKEWT_TMAX_FIXED).
+  const plotWForRanges = width - marginLeft - barbZoneWidth, plotHForRanges = height - marginBottom - 20;
+  // Eixos ajustats a partir de TOTES les sondes d'aquest incendi (no nomes
+  // les dues escollides als desplegables), perque no canviin en seleccionar
+  // una altra parella dins del mateix incendi.
   const rangeSondes = INCENDI.sondes.map(s => ({ s }));
-  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(rangeSondes);
+  const { PMIN, PMAX, TMIN, TMAX } = computeSkewTRanges(rangeSondes, plotWForRanges, plotHForRanges);
   const { toX, toY } = makeSkewTTransform(PMIN, PMAX, TMIN, TMAX, width, height, marginLeft, marginBottom, barbZoneWidth);
   const plotRight = width - barbZoneWidth;
   const plotBottom = height - marginBottom;
