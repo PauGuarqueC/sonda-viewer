@@ -1843,8 +1843,8 @@ function renderDrift(){
       }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>pic · ${Math.round(s.peak_agl_m || 0)} m AGL`);
     }
     if(s.landing_prediction){
-      L.marker([s.landing_prediction.lat, s.landing_prediction.lon], {
-        opacity: 0.8
+      L.circleMarker([s.landing_prediction.lat, s.landing_prediction.lon], {
+        radius:4, color:'#999', weight:1, fillColor:'#999', fillOpacity:0.5, dashArray:'2,2'
       }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>predicció d'aterratge`);
     }
   });
