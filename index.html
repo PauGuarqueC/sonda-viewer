@@ -971,6 +971,12 @@ wireDualSlider('sliderRiseMin', 'sliderRiseMax', 'sliderRiseMinVal', 'sliderRise
 
 let allSondaColors = {};
 
+function closeAllSondaMenus(){
+  document.querySelectorAll('.sonda-menu-list').forEach(m => { m.style.display = 'none'; });
+}
+document.addEventListener('click', closeAllSondaMenus);
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeAllSondaMenus(); });
+
 function buildSidebar(){
   document.getElementById('incendiName').textContent = INCENDI.incendi || '—';
   const list = document.getElementById('sondaList');
@@ -990,7 +996,12 @@ function buildSidebar(){
         <option value="ambient" ${s.tipus==='ambient'?'selected':''}>ambient</option>
         <option value="columna" ${s.tipus==='columna'?'selected':''}>columna</option>
       </select>
-      <a href="#" class="sonda-delete" data-sond-id="${s.sond_id}" title="elimina aquesta sonda" style="margin-left:auto; color:var(--text-dim); flex-shrink:0;">🗑</a>
+      <div class="sonda-menu" style="position:relative; margin-left:auto; flex-shrink:0;">
+        <button type="button" class="sonda-menu-btn" data-sond-id="${s.sond_id}" title="opcions" style="background:none; border:none; cursor:pointer; color:var(--text-dim); font-size:15px; line-height:1; padding:3px 7px; border-radius:3px;">⋮</button>
+        <div class="sonda-menu-list" style="display:none; position:absolute; right:0; top:100%; background:#fff; border:1px solid var(--panel-border); border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,.15); z-index:20; min-width:130px; overflow:hidden;">
+          <a href="#" class="sonda-delete" data-sond-id="${s.sond_id}" style="display:block; padding:7px 10px; color:var(--red); text-decoration:none; font-family:var(--font-mono); font-size:11px; white-space:nowrap;">🗑 Elimina sonda</a>
+        </div>
+      </div>
     </label>
     <div class="sonda-meta-row" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin:-4px 0 8px 22px;">
       <span>${s.launch_time_utc || '—'} UTC</span>
@@ -1019,10 +1030,21 @@ function buildSidebar(){
     sel.addEventListener('click', e => e.stopPropagation());
     sel.addEventListener('change', e => editSondaTipus(sel.dataset.sondId, sel.value, sel));
   });
+  list.querySelectorAll('.sonda-menu-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const menu = btn.nextElementSibling;
+      const wasOpen = menu.style.display === 'block';
+      closeAllSondaMenus();
+      menu.style.display = wasOpen ? 'none' : 'block';
+    });
+  });
   list.querySelectorAll('.sonda-delete').forEach(link => {
     link.addEventListener('click', e => {
       e.preventDefault();
       e.stopPropagation();
+      closeAllSondaMenus();
       deleteSonda(link.dataset.sondId);
     });
   });
