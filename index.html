@@ -1427,22 +1427,31 @@ function moistAdiabatT(T0C, P0, targetP){
   return T - 273.15;
 }
 
-// Pendent del biaix ("skew"): 1 píxel cap a la dreta per cada píxel cap
-// amunt = exactament 45°, la convenció estàndard d'un diagrama Skew-T–log-P
-// (abans depenia del rang de temperatures i sortia molt més pla, ~9°).
-const SKEW_PX_PER_PX = 1;
+// Pendent del biaix ("skew"): com a màxim 1 píxel cap a la dreta per cada
+// píxel cap amunt (45°, la convenció estàndard d'un Skew-T-log-P), però
+// reduït automàticament quan el quadre és massa estret/alt per suportar-ho
+// sencer sense que el traçat s'escapi lateralment -- en un quadre ample
+// sempre surt a 45°; en un de molt estret, el biaix s'aplana una mica en
+// lloc de desbordar-se o retallar-se (computeSkewTSlope calcula el mateix
+// valor a partir de la mateixa geometria, perquè els dos llocs coincideixin
+// sempre).
+function computeSkewTSlope(plotW, plotH){
+  const SAFE_FRACTION = 0.7; // marge de seguretat perquè l'ajust de l'eix X convergeixi còmodament
+  return Math.min(1, SAFE_FRACTION * plotW / plotH);
+}
 
 function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, marginBottom, marginRight){
   const plotW = width - marginLeft - marginRight;
   const plotH = height - marginBottom - 20;
   const lnPmax = Math.log(pMax), lnPmin = Math.log(pMin);
+  const skewSlope = computeSkewTSlope(plotW, plotH);
 
   const toY = (p) => 20 + plotH * (Math.log(p) - lnPmin) / (lnPmax - lnPmin);
   const toX = (tC, p) => {
     const y = toY(p);
     const yBottom = 20 + plotH;
     const xBase = marginLeft + (tC - tMin) / (tMax - tMin) * plotW;
-    return xBase + SKEW_PX_PER_PX * (yBottom - y);
+    return xBase + skewSlope * (yBottom - y);
   };
   return { toX, toY, plotW, plotH, marginLeft, marginBottom };
 }
@@ -1471,47 +1480,30 @@ function computeSkewTRanges(sondes, plotW, plotH){
   }
 
   // La transformacio de dibuix (makeSkewTTransform) desplaça cada punt cap
-  // a la dreta en pujar, SKEW_PX_PER_PX píxels per cada píxel d'alçada
-  // (45° fix, sense dependre del rang de temperatures). Per triar TMIN/TMAX
-  // convertim aquest desplaçament (en píxels) a graus equivalents fent
-  // servir l'escala de l'eix (graus/píxel), que depèn del propi rang que
-  // estem triant -- per això ho resolem per iteracio: a cada volta calculem
-  // on cauria realment cada punt (temp. i punt de rosada) amb el rang
-  // actual, i n'ajustem els limits perque el punt mes extrem (allà on
-  // sigui, en alçada) quedi vora el marge del gràfic -- en lloc d'agafar
-  // el valor en brut, que quedava despenjat del traçat real un cop aplicat
-  // el biaix (l'eix es veia sempre massa ample, amb marges buits, perque
-  // el mínim/màxim reals solen ser en alçada, no a la base, on s'etiqueta
-  // l'eix).
-  //
-  // Aquesta iteracio nomes convergeix quan el quadre es prou ample respecte
-  // la seva alçada (si no, el desplaçament acumulat cap a la dreta pot
-  // superar l'amplada disponible i no existeix cap solucio -- la iteracio
-  // "explota" cap a valors absurds en lloc de convergir). Per garantir
-  // estabilitat sempre, nomes fem l'ajust fi quan es matematicament segur
-  // (K prou per sota d'1); en cas contrari, mantenim el comportament simple
-  // i sempre acotat (rang real ± marge fix), acceptant que en un quadre molt
-  // estret el traçat pugui quedar una mica retallat pels costats (el clip()
-  // ja ho gestiona) en lloc de desbocar l'eix.
+  // a la dreta en pujar, skewSlope píxels per cada píxel d'alçada (com a
+  // màxim 45°, vegeu computeSkewTSlope -- ja ve limitat perquè mai superi
+  // un marge de seguretat respecte l'amplada disponible, així aquesta
+  // iteracio SEMPRE convergeix, sigui quina sigui la geometria del quadre).
+  // Per triar TMIN/TMAX convertim aquest desplaçament (en píxels) a graus
+  // equivalents fent servir l'escala de l'eix (graus/píxel), que depèn del
+  // propi rang que estem triant -- per això ho resolem per iteracio: a cada
+  // volta calculem on cauria realment cada punt (temp. i punt de rosada)
+  // amb el rang actual, i n'ajustem els limits perque el punt mes extrem
+  // (allà on sigui, en alçada) quedi vora el marge del gràfic -- en lloc
+  // d'agafar el valor en brut, que quedava despenjat del traçat real un
+  // cop aplicat el biaix.
   const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
   const fp = (p) => (lnPmax - Math.log(p)) / (lnPmax - lnPmin); // 0 a la base, 1 al cim
-  const offsetPx = (p) => SKEW_PX_PER_PX * plotH * fp(p); // desplaçament, en píxels
+  const skewSlope = computeSkewTSlope(plotW, plotH);
+  const offsetPx = (p) => skewSlope * plotH * fp(p); // desplaçament, en píxels
   const rawTs = pts.map(pt => pt.tC);
-  const K = (SKEW_PX_PER_PX * plotH) / plotW; // pitjor pendent possible (fp=1)
-  let TMIN, TMAX;
-  if(K < 0.8){
-    TMIN = Math.min(...rawTs); TMAX = Math.max(...rawTs);
-    for(let iter = 0; iter < 8; iter++){
-      const D = Math.max(5, TMAX - TMIN);
-      const degPerPx = D / plotW;
-      const screenT = pts.map(pt => pt.tC + offsetPx(pt.p) * degPerPx);
-      TMIN = Math.min(...screenT);
-      TMAX = Math.max(...screenT);
-    }
-  } else {
-    TMIN = Math.min(...rawTs) - 5;
-    TMAX = Math.max(...rawTs) + 5;
-    return { PMIN, PMAX, TMIN, TMAX };
+  let TMIN = Math.min(...rawTs), TMAX = Math.max(...rawTs);
+  for(let iter = 0; iter < 8; iter++){
+    const D = Math.max(5, TMAX - TMIN);
+    const degPerPx = D / plotW;
+    const screenT = pts.map(pt => pt.tC + offsetPx(pt.p) * degPerPx);
+    TMIN = Math.min(...screenT);
+    TMAX = Math.max(...screenT);
   }
 
   // marge fix en píxels als dos costats, perquè el traçat no quedi enganxat
