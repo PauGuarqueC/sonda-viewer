@@ -341,11 +341,6 @@
             <select id="skewtSonda2" style="flex:1; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;"></select>
           </div>
           <div class="mini-slider" style="max-width:340px;">
-            <span>T (°C)</span>
-            <div class="dual-slider"><input type="range" id="sliderSkewtTMin"><input type="range" id="sliderSkewtTMax"></div>
-            <span class="readout"><span id="sliderSkewtTMinVal"></span>–<span id="sliderSkewtTMaxVal"></span></span>
-          </div>
-          <div class="mini-slider" style="max-width:340px;">
             <span>P (mb)</span>
             <div class="dual-slider"><input type="range" id="sliderSkewtPMin"><input type="range" id="sliderSkewtPMax"></div>
             <span class="readout"><span id="sliderSkewtPMinVal"></span>–<span id="sliderSkewtPMaxVal"></span></span>
@@ -354,7 +349,7 @@
           <div style="font-size:9.5px; color:var(--text-dim); margin-top:3px;">el cursor és el LCL: mou-lo per qualsevol punt del gràfic i es calculen, en directe, la T i la Td que hi hauria d'haver en superfície perquè una parcel·la saturi exactament allà — clica per fixar-ho</div>
           <div id="skewtParcelPanel" style="display:none; margin-top:6px; padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;">
             <div style="display:flex; justify-content:space-between; align-items:center; color:var(--text-dim);">
-              <span>LCL <span id="skewtParcelLclP"></span>mb — superfície: T <span id="skewtParcelSfcT"></span>°C, Td <span id="skewtParcelSfcTd"></span>°C</span>
+              <span>LCL <span id="skewtParcelLclP"></span>mb — superfície (<span id="skewtParcelSfcP"></span>mb): T <span id="skewtParcelSfcT"></span>°C, Td <span id="skewtParcelSfcTd"></span>°C</span>
               <a href="#" id="skewtParcelHide" style="color:var(--text-dim);">✕ deixa anar</a>
             </div>
           </div>
@@ -1486,47 +1481,60 @@ function makeSkewTTransform(pMin, pMax, tMin, tMax, width, height, marginLeft, m
   return { toX, toY, plotW, plotH, marginLeft, marginBottom };
 }
 
-// Eixos del SkewT: totalment fixos per defecte (iguals per a totes les
-// sondes i tots els incendis, per comparabilitat visual directa), però
-// ajustables a mà amb els sliders sota els desplegables de sondes (vegeu
-// initSkewtAxisSliders). Com que aquests quatre valors no depenen de les
-// dades, la posició de qualsevol punt (T, p) al gràfic surt únicament
-// d'ell mateix i d'aquesta escala -- la inclinació d'un tram del traçat
-// reflecteix només la relació T(p) real d'aquell tram, mai la llargada
-// del vol.
-let skewtAxisOverride = { PMIN: 350, PMAX: 1000, TMIN: -10, TMAX: 45 };
+// Eixos del SkewT: el de pressió (PMIN/PMAX) és totalment fix, igual per
+// a totes les sondes i tots els incendis (comparabilitat visual directa),
+// i ajustable a mà amb el slider sota els desplegables de sondes (vegeu
+// initSkewtAxisSliders). El de temperatura NO té slider propi -- es
+// deriva automàticament del de pressió, conservant la relació física que
+// garanteix la inclinació correcta: l'escala graus/píxel es calibra
+// perquè una adiabàtica seca de referència es desplaci, de la base al
+// cim, exactament els mateixos píxels que una isoterma, però en sentit
+// contrari (vegeu el calibratge equivalent que es feia servir abans
+// d'uns eixos totalment fixos). Així, en tocar el slider de pressió,
+// l'eix de temperatures s'hi adapta sol per seguir mostrant sempre el
+// mateix "quadriculat" estàndard (isotermes dretes, adiabàtiques
+// esquerres), en lloc de quedar-hi descalibrat.
+const SKEWT_TEMP_ANCHOR_C = 17.5; // centre de l'eix de temperatures (mitjana de l'antic -10..45 fix)
+let skewtAxisOverride = { PMIN: 350, PMAX: 1000 };
 
 function computeSkewTRanges(sondes, plotW, plotH){
-  return { ...skewtAxisOverride };
+  const { PMIN, PMAX } = skewtAxisOverride;
+  const skewSlope = computeSkewTSlope(plotW, plotH);
+  const pxSpan = skewSlope * plotH; // desplaçament total, base -> cim (com una isoterma)
+
+  const thetaRef = 300; // K, adiabàtica seca de referència, purament pel calibratge
+  const tDryBase = thetaRef * Math.pow(PMAX / 1000, 0.286) - 273.15;
+  const tDryTop = thetaRef * Math.pow(PMIN / 1000, 0.286) - 273.15;
+  const dTDry = Math.max(0.01, tDryBase - tDryTop);
+  const degPerPx = dTDry / (2 * pxSpan);
+  const D = Math.max(5, degPerPx * plotW);
+
+  return { PMIN, PMAX, TMIN: SKEWT_TEMP_ANCHOR_C - D / 2, TMAX: SKEWT_TEMP_ANCHOR_C + D / 2 };
 }
 
 function initSkewtAxisSliders(){
-  const cfg = [
-    ['sliderSkewtTMin', 'sliderSkewtTMax', 'sliderSkewtTMinVal', 'sliderSkewtTMaxVal', 'TMIN', 'TMAX', -40, 55, 1],
-    ['sliderSkewtPMin', 'sliderSkewtPMax', 'sliderSkewtPMinVal', 'sliderSkewtPMaxVal', 'PMIN', 'PMAX', 100, 1050, 10]
-  ];
-  cfg.forEach(([minId, maxId, minValId, maxValId, minKey, maxKey, lo, hi, step]) => {
-    const minInput = document.getElementById(minId), maxInput = document.getElementById(maxId);
-    if(!minInput || !maxInput) return;
-    [minInput, maxInput].forEach(el => { el.min = lo; el.max = hi; el.step = step; });
-    minInput.value = skewtAxisOverride[minKey];
-    maxInput.value = skewtAxisOverride[maxKey];
-    document.getElementById(minValId).textContent = skewtAxisOverride[minKey];
-    document.getElementById(maxValId).textContent = skewtAxisOverride[maxKey];
-    minInput.addEventListener('input', () => {
-      let v = parseFloat(minInput.value);
-      if(v >= skewtAxisOverride[maxKey]){ v = skewtAxisOverride[maxKey] - step; minInput.value = v; }
-      skewtAxisOverride[minKey] = v;
-      document.getElementById(minValId).textContent = v;
-      renderSkewT();
-    });
-    maxInput.addEventListener('input', () => {
-      let v = parseFloat(maxInput.value);
-      if(v <= skewtAxisOverride[minKey]){ v = skewtAxisOverride[minKey] + step; maxInput.value = v; }
-      skewtAxisOverride[maxKey] = v;
-      document.getElementById(maxValId).textContent = v;
-      renderSkewT();
-    });
+  const [minId, maxId, minValId, maxValId, minKey, maxKey, lo, hi, step] =
+    ['sliderSkewtPMin', 'sliderSkewtPMax', 'sliderSkewtPMinVal', 'sliderSkewtPMaxVal', 'PMIN', 'PMAX', 100, 1050, 10];
+  const minInput = document.getElementById(minId), maxInput = document.getElementById(maxId);
+  if(!minInput || !maxInput) return;
+  [minInput, maxInput].forEach(el => { el.min = lo; el.max = hi; el.step = step; });
+  minInput.value = skewtAxisOverride[minKey];
+  maxInput.value = skewtAxisOverride[maxKey];
+  document.getElementById(minValId).textContent = skewtAxisOverride[minKey];
+  document.getElementById(maxValId).textContent = skewtAxisOverride[maxKey];
+  minInput.addEventListener('input', () => {
+    let v = parseFloat(minInput.value);
+    if(v >= skewtAxisOverride[maxKey]){ v = skewtAxisOverride[maxKey] - step; minInput.value = v; }
+    skewtAxisOverride[minKey] = v;
+    document.getElementById(minValId).textContent = v;
+    renderSkewT();
+  });
+  maxInput.addEventListener('input', () => {
+    let v = parseFloat(maxInput.value);
+    if(v <= skewtAxisOverride[minKey]){ v = skewtAxisOverride[minKey] + step; maxInput.value = v; }
+    skewtAxisOverride[maxKey] = v;
+    document.getElementById(maxValId).textContent = v;
+    renderSkewT();
   });
 }
 initSkewtAxisSliders();
@@ -1696,15 +1704,15 @@ function renderSkewT(){
   // mescla constant que hi passa (la seva pròpia raó de saturació, ja
   // que al LCL la parcel·la just satura) dona la Td. Per sobre del
   // cursor, la pujada continua per l'adiabàtica saturada.
-  function drawParcelFromLCL(pLCL, tLCL, opts){
+  function drawParcelFromLCL(pLCL, tLCL, pSfc, opts){
     opts = opts || {};
-    if(pLCL >= PMAX) return null; // no hi ha marge per sota per desfer les corbes
+    if(pLCL >= pSfc) return null; // no hi ha marge per sota per desfer les corbes
 
     const thetaLCL = (tLCL + 273.15) * Math.pow(1000 / pLCL, 0.286);
-    const tSfc = thetaLCL * Math.pow(PMAX / 1000, 0.286) - 273.15;
+    const tSfc = thetaLCL * Math.pow(pSfc / 1000, 0.286) - 273.15;
 
     const w = satMixingRatio(tLCL, pLCL);
-    const eSfc = w * PMAX / (0.622 + w);
+    const eSfc = w * pSfc / (0.622 + w);
     const lnESfc = Math.log(eSfc / 6.112);
     const tdSfc = (243.5 * lnESfc) / (17.67 - lnESfc);
 
@@ -1715,8 +1723,8 @@ function renderSkewT(){
     ctx.strokeStyle = '#2e9e6b'; ctx.lineWidth = opts.preview ? 1.2 : 1.8; ctx.setLineDash([3, 3]);
     ctx.beginPath();
     let startedW = false;
-    const wStep = Math.max(2, (PMAX - pLCL) / 30);
-    for(let p = PMAX; p >= pLCL; p -= wStep){
+    const wStep = Math.max(2, (pSfc - pLCL) / 30);
+    for(let p = pSfc; p >= pLCL; p -= wStep){
       const e = w * p / (0.622 + w);
       const lnE = Math.log(e / 6.112);
       const tC = (243.5 * lnE) / (17.67 - lnE);
@@ -1730,8 +1738,8 @@ function renderSkewT(){
     ctx.strokeStyle = '#c0392b'; ctx.lineWidth = opts.preview ? 1.4 : 2.2;
     ctx.beginPath();
     let started = false;
-    const dryStep = Math.max(2, (PMAX - pLCL) / 30);
-    for(let p = PMAX; p > pLCL; p -= dryStep){
+    const dryStep = Math.max(2, (pSfc - pLCL) / 30);
+    for(let p = pSfc; p > pLCL; p -= dryStep){
       const tC = thetaLCL * Math.pow(p / 1000, 0.286) - 273.15;
       const x = toX(tC, p), y = toY(p);
       if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
@@ -1763,17 +1771,24 @@ function renderSkewT(){
     }
 
     ctx.restore();
-    return { tSfc, tdSfc, pLCL, tLCL };
+    return { tSfc, tdSfc, pLCL, tLCL, pSfc };
   }
+
+  // "superfície" per a la parcel·la interactiva = el punt de llançament
+  // REAL de la sonda 1 (primer desplegable), no els 1000mb del quadre --
+  // en incendis a muntanya, per exemple, poden ser molt diferents.
+  const sondaParcel1 = INCENDI.sondes.find(x => x.sond_id === document.getElementById('skewtSonda1').value);
+  const sfcParcel = sondaParcel1 && (sondaParcel1.profile || []).find(p => p.pressure_mb != null);
+  const pSfcParcel = sfcParcel ? sfcParcel.pressure_mb : PMAX;
 
   // parcel·la fixada (clic) -- té prioritat visual sobre la vista ràpida
   if(skewtParcelStart){
-    const res = drawParcelFromLCL(skewtParcelStart.pressure_mb, skewtParcelStart.tC, {});
+    const res = drawParcelFromLCL(skewtParcelStart.pressure_mb, skewtParcelStart.tC, pSfcParcel, {});
     updateSkewtParcelPanel(res);
   } else if(skewtParcelHover){
     // vista ràpida en passar el cursor (windy-style): el cursor mateix
     // és el LCL -- vegeu wireSkewtClick
-    drawParcelFromLCL(skewtParcelHover.pressure_mb, skewtParcelHover.tC, { preview: true });
+    drawParcelFromLCL(skewtParcelHover.pressure_mb, skewtParcelHover.tC, pSfcParcel, { preview: true });
   }
 
   ctx.restore(); // ------- fi del retallat: tota la resta (etiquetes, vora, barbes) es dibuixa sense clip -------
@@ -1870,6 +1885,7 @@ function updateSkewtParcelPanel(res){
   if(!skewtParcelStart || !res){ panel.style.display = 'none'; return; }
   panel.style.display = '';
   document.getElementById('skewtParcelLclP').textContent = Math.round(res.pLCL);
+  document.getElementById('skewtParcelSfcP').textContent = Math.round(res.pSfc);
   document.getElementById('skewtParcelSfcT').textContent = res.tSfc.toFixed(1);
   document.getElementById('skewtParcelSfcTd').textContent = res.tdSfc.toFixed(1);
 }
