@@ -351,7 +351,26 @@
             <span class="readout"><span id="sliderSkewtPMinVal"></span>–<span id="sliderSkewtPMaxVal"></span></span>
           </div>
           <div id="skewtBox" style="width:100%; aspect-ratio: 8 / 5; min-height:220px; max-height:520px; position:relative;"><canvas id="skewtCanvas"></canvas></div>
-          <div style="font-size:9.5px; color:var(--text-dim); margin-top:3px;">clica un punt del gràfic per veure la pujada d'una parcel·la (adiabàtica seca fins al LCL, després saturada) — torna a clicar per amagar-la</div>
+          <div style="font-size:9.5px; color:var(--text-dim); margin-top:3px;">clica un punt del gràfic per triar-hi el nivell de partida d'una parcel·la (adiabàtica seca fins al LCL, després saturada) — un cop triat, juga amb la T i la Td de sota per veure "què passaria si..."</div>
+          <div id="skewtParcelPanel" style="display:none; margin-top:6px; padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:10px; color:var(--text-dim); margin-bottom:2px;">
+              <span>parcel·la a <span id="skewtParcelP"></span>mb</span>
+              <span>
+                <a href="#" id="skewtParcelReset" style="color:var(--text-dim); margin-right:10px;">valors reals</a>
+                <a href="#" id="skewtParcelHide" style="color:var(--text-dim);">✕ amaga</a>
+              </span>
+            </div>
+            <div class="mini-slider" style="max-width:340px;">
+              <span>T</span>
+              <div class="dual-slider" style="flex:1;"><input type="range" id="sliderParcelT" style="width:100%;"></div>
+              <span class="readout"><span id="sliderParcelTVal"></span>°C</span>
+            </div>
+            <div class="mini-slider" style="max-width:340px;">
+              <span>Td</span>
+              <div class="dual-slider" style="flex:1;"><input type="range" id="sliderParcelTd" style="width:100%;"></div>
+              <span class="readout"><span id="sliderParcelTdVal"></span>°C</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1141,22 +1160,27 @@ function computeABLh(s){
   return null; // no s'ha trobat una inversio clara dins el rang mesurat
 }
 
-function lclFromTRhP(tC, rhPct, pMb){
+function lclFromTTd(tC, tdC, pMb){
   // Formula de Bolton (1980) per la temperatura del LCL (precisio ~0.1K,
   // el mateix mètode analitic que fan servir moltes eines meteorologiques
-  // per evitar la iteracio de Davies-Jones que fa servir MetPy).
-  if(tC == null || rhPct == null || pMb == null || rhPct <= 0) return null;
-  const lnRH = Math.log(rhPct / 100);
-  const a = (17.67 * tC) / (243.5 + tC);
-  const Td = (243.5 * (lnRH + a)) / (17.67 - lnRH - a);
-
-  const T_K = tC + 273.15, Td_K = Td + 273.15;
+  // per evitar la iteracio de Davies-Jones que fa servir MetPy), a partir
+  // directament de T i Td (sense passar per la humitat relativa).
+  if(tC == null || tdC == null || pMb == null) return null;
+  const T_K = tC + 273.15, Td_K = tdC + 273.15;
   const T_LCL_K = 1 / (1 / (Td_K - 56) + Math.log(T_K / Td_K) / 800) + 56; // Bolton (1980)
 
   const thetaSfc = T_K * Math.pow(1000 / pMb, 0.286);
   const P_LCL = 1000 * Math.pow(T_LCL_K / thetaSfc, 1 / 0.286);
 
-  return { T_LCL_C: T_LCL_K - 273.15, P_LCL_mb: P_LCL, Td_C: Td };
+  return { T_LCL_C: T_LCL_K - 273.15, P_LCL_mb: P_LCL, Td_C: tdC };
+}
+
+function lclFromTRhP(tC, rhPct, pMb){
+  if(tC == null || rhPct == null || pMb == null || rhPct <= 0) return null;
+  const lnRH = Math.log(rhPct / 100);
+  const a = (17.67 * tC) / (243.5 + tC);
+  const Td = (243.5 * (lnRH + a)) / (17.67 - lnRH - a);
+  return lclFromTTd(tC, Td, pMb);
 }
 
 function computeLCL(s){
@@ -1674,55 +1698,58 @@ function renderSkewT(){
   });
 
   // --- trajectòria interactiva d'una parcel·la (windy-style): en clicar un
-  // punt del gràfic, puja des d'alli per l'adiabàtica seca fins al LCL i
-  // despres per la saturada -- vegeu skewtParcelStart i el listener de clic
-  // més avall ---
+  // punt del gràfic es tria un nivell de partida, i des del panell de sota
+  // se'n pot editar la T i la Td a mà ("què passaria si...") -- puja per
+  // l'adiabàtica seca fins al LCL i despres per la saturada -- vegeu
+  // skewtParcelStart i el listener de clic més avall ---
   if(skewtParcelStart){
-    const s = INCENDI.sondes.find(x => x.sond_id === skewtParcelStart.sondId);
-    const pt = s && (s.profile || []).find(p => p.pressure_mb != null && Math.abs(p.pressure_mb - skewtParcelStart.pressure_mb) < 0.01);
-    if(pt && pt.temp_c != null){
-      const p0 = pt.pressure_mb, t0 = pt.temp_c;
-      const theta0 = (t0 + 273.15) * Math.pow(1000 / p0, 0.286);
-      const lcl = (pt.rh_pct != null && pt.rh_pct > 0) ? lclFromTRhP(t0, pt.rh_pct, p0) : null;
-      const pLCL = (lcl && lcl.P_LCL_mb < p0) ? lcl.P_LCL_mb : PMIN;
+    const p0 = skewtParcelStart.pressure_mb, t0 = skewtParcelStart.tC, td0 = skewtParcelStart.tdC;
+    const theta0 = (t0 + 273.15) * Math.pow(1000 / p0, 0.286);
+    const lcl = (td0 != null) ? lclFromTTd(t0, Math.min(td0, t0), p0) : null;
+    const pLCL = (lcl && lcl.P_LCL_mb < p0) ? lcl.P_LCL_mb : PMIN;
 
-      // tram sec: p0 -> pLCL (adiabàtica seca des del punt de partida)
-      ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.2; ctx.setLineDash([]);
+    // tram sec: p0 -> pLCL (adiabàtica seca des del punt de partida)
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.2; ctx.setLineDash([]);
+    ctx.beginPath();
+    let started = false;
+    const dryStep = Math.max(2, (p0 - pLCL) / 30);
+    for(let p = p0; p > pLCL; p -= dryStep){
+      const tC = theta0 * Math.pow(p / 1000, 0.286) - 273.15;
+      const x = toX(tC, p), y = toY(p);
+      if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    { const tC = theta0 * Math.pow(pLCL / 1000, 0.286) - 273.15; ctx.lineTo(toX(tC, pLCL), toY(pLCL)); }
+    ctx.stroke();
+
+    // tram humit: pLCL -> PMIN (adiabàtica saturada per sobre del LCL)
+    if(lcl && pLCL < p0){
+      ctx.strokeStyle = '#1565c0'; ctx.lineWidth = 2.2;
       ctx.beginPath();
-      let started = false;
-      const dryStep = Math.max(2, (p0 - pLCL) / 30);
-      for(let p = p0; p > pLCL; p -= dryStep){
-        const tC = theta0 * Math.pow(p / 1000, 0.286) - 273.15;
+      let started2 = false;
+      const wetStep = Math.max(2, (pLCL - PMIN) / 40);
+      for(let p = pLCL; p >= PMIN; p -= wetStep){
+        const tC = moistAdiabatT(lcl.T_LCL_C, pLCL, p);
         const x = toX(tC, p), y = toY(p);
-        if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        if(!started2){ ctx.moveTo(x, y); started2 = true; } else ctx.lineTo(x, y);
       }
-      { const tC = theta0 * Math.pow(pLCL / 1000, 0.286) - 273.15; ctx.lineTo(toX(tC, pLCL), toY(pLCL)); }
       ctx.stroke();
 
-      // tram humit: pLCL -> PMIN (adiabàtica saturada per sobre del LCL)
-      if(lcl && pLCL < p0){
-        ctx.strokeStyle = '#1565c0'; ctx.lineWidth = 2.2;
-        ctx.beginPath();
-        let started2 = false;
-        const wetStep = Math.max(2, (pLCL - PMIN) / 40);
-        for(let p = pLCL; p >= PMIN; p -= wetStep){
-          const tC = moistAdiabatT(lcl.T_LCL_C, pLCL, p);
-          const x = toX(tC, p), y = toY(p);
-          if(!started2){ ctx.moveTo(x, y); started2 = true; } else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
+      ctx.fillStyle = '#6a1b9a';
+      const xL = toX(lcl.T_LCL_C, pLCL), yL = toY(pLCL);
+      ctx.beginPath(); ctx.arc(xL, yL, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.font = '9px "Roboto Mono", monospace'; ctx.textAlign = 'left';
+      ctx.fillStyle = '#6a1b9a';
+      ctx.fillText(`LCL ${Math.round(pLCL)}mb`, xL + 6, yL - 4);
+    }
 
-        ctx.fillStyle = '#6a1b9a';
-        const xL = toX(lcl.T_LCL_C, pLCL), yL = toY(pLCL);
-        ctx.beginPath(); ctx.arc(xL, yL, 3.5, 0, Math.PI * 2); ctx.fill();
-        ctx.font = '9px "Roboto Mono", monospace'; ctx.textAlign = 'left';
-        ctx.fillStyle = '#6a1b9a';
-        ctx.fillText(`LCL ${Math.round(pLCL)}mb`, xL + 6, yL - 4);
-      }
-
-      ctx.fillStyle = '#c0392b';
-      const xS = toX(t0, p0), yS = toY(p0);
-      ctx.beginPath(); ctx.arc(xS, yS, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c0392b';
+    const xS = toX(t0, p0), yS = toY(p0);
+    ctx.beginPath(); ctx.arc(xS, yS, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+    if(td0 != null){
+      ctx.fillStyle = '#1565c0';
+      const xTd = toX(td0, p0);
+      ctx.beginPath(); ctx.arc(xTd, yS, 3, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
     }
   }
@@ -1785,8 +1812,25 @@ function renderSkewT(){
   skewtLastGeom = { PMIN, PMAX, marginLeft, marginBottom, width, height };
 }
 
-let skewtParcelStart = null; // { sondId, pressure_mb } triat clicant al gràfic, o null
+// { pressure_mb, tC, tdC } -- nivell i valors (editables) de la parcel·la
+// interactiva, o null si no se n'ha triat cap encara.
+let skewtParcelStart = null;
 let skewtLastGeom = null;
+
+function updateSkewtParcelPanel(){
+  const panel = document.getElementById('skewtParcelPanel');
+  if(!panel) return;
+  if(!skewtParcelStart){ panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  document.getElementById('skewtParcelP').textContent = Math.round(skewtParcelStart.pressure_mb);
+  const tInput = document.getElementById('sliderParcelT'), tdInput = document.getElementById('sliderParcelTd');
+  tInput.value = skewtParcelStart.tC;
+  document.getElementById('sliderParcelTVal').textContent = skewtParcelStart.tC.toFixed(1);
+  if(skewtParcelStart.tdC != null){
+    tdInput.value = skewtParcelStart.tdC;
+    document.getElementById('sliderParcelTdVal').textContent = skewtParcelStart.tdC.toFixed(1);
+  }
+}
 
 function wireSkewtClick(){
   const canvas = document.getElementById('skewtCanvas');
@@ -1804,6 +1848,9 @@ function wireSkewtClick(){
     const lnPmax = Math.log(PMAX), lnPmin = Math.log(PMIN);
     const p = Math.exp(lnPmin + frac * (lnPmax - lnPmin));
 
+    // el nivell de partida es tria clicant, però sempre a partir de la
+    // sonda 1 (primer desplegable) -- la T/Td reals d'allà nomes serveixen
+    // de valor inicial per als sliders, que despres es poden editar lliurement
     const id = document.getElementById('skewtSonda1').value;
     const s = INCENDI.sondes.find(x => x.sond_id === id);
     if(!s) return;
@@ -1812,15 +1859,60 @@ function wireSkewtClick(){
     let best = prof[0], bestD = Infinity;
     prof.forEach(pt => { const d = Math.abs(pt.pressure_mb - p); if(d < bestD){ bestD = d; best = pt; } });
 
-    if(skewtParcelStart && skewtParcelStart.sondId === id && Math.abs(skewtParcelStart.pressure_mb - best.pressure_mb) < 0.01){
-      skewtParcelStart = null; // torna a clicar el mateix punt -> amaga la parcel·la
-    } else {
-      skewtParcelStart = { sondId: id, pressure_mb: best.pressure_mb };
-    }
+    const td = dewpointC(best.temp_c, best.rh_pct);
+    skewtParcelStart = { pressure_mb: best.pressure_mb, tC: best.temp_c, tdC: td != null ? Math.min(td, best.temp_c) : best.temp_c - 2 };
+    updateSkewtParcelPanel();
     renderSkewT();
   });
 }
 wireSkewtClick();
+
+function wireSkewtParcelPanel(){
+  const tInput = document.getElementById('sliderParcelT'), tdInput = document.getElementById('sliderParcelTd');
+  const resetLink = document.getElementById('skewtParcelReset'), hideLink = document.getElementById('skewtParcelHide');
+  if(!tInput || !tdInput || !resetLink || !hideLink) return;
+  [tInput, tdInput].forEach(el => { el.min = -40; el.max = 50; el.step = 0.5; });
+  tInput.addEventListener('input', () => {
+    if(!skewtParcelStart) return;
+    let v = parseFloat(tInput.value);
+    if(skewtParcelStart.tdC != null && v < skewtParcelStart.tdC) v = skewtParcelStart.tdC; // Td mai per sobre de T
+    skewtParcelStart.tC = v;
+    tInput.value = v;
+    document.getElementById('sliderParcelTVal').textContent = v.toFixed(1);
+    renderSkewT();
+  });
+  tdInput.addEventListener('input', () => {
+    if(!skewtParcelStart) return;
+    let v = parseFloat(tdInput.value);
+    if(v > skewtParcelStart.tC) v = skewtParcelStart.tC; // Td mai per sobre de T
+    skewtParcelStart.tdC = v;
+    tdInput.value = v;
+    document.getElementById('sliderParcelTdVal').textContent = v.toFixed(1);
+    renderSkewT();
+  });
+  resetLink.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    if(!skewtParcelStart) return;
+    const id = document.getElementById('skewtSonda1').value;
+    const s = INCENDI.sondes.find(x => x.sond_id === id);
+    const prof = s && (s.profile || []).filter(pt => pt.pressure_mb != null && pt.temp_c != null);
+    if(!prof || !prof.length) return;
+    let best = prof[0], bestD = Infinity;
+    prof.forEach(pt => { const d = Math.abs(pt.pressure_mb - skewtParcelStart.pressure_mb); if(d < bestD){ bestD = d; best = pt; } });
+    const td = dewpointC(best.temp_c, best.rh_pct);
+    skewtParcelStart.tC = best.temp_c;
+    skewtParcelStart.tdC = td != null ? Math.min(td, best.temp_c) : best.temp_c - 2;
+    updateSkewtParcelPanel();
+    renderSkewT();
+  });
+  hideLink.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    skewtParcelStart = null;
+    updateSkewtParcelPanel();
+    renderSkewT();
+  });
+}
+wireSkewtParcelPanel();
 
 
 let driftMap = null;
