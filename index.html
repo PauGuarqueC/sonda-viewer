@@ -2111,6 +2111,48 @@ function renderSkewT(){
   const modelSfcCutoff = realSfcPressures.length ? Math.min(...realSfcPressures) : null;
   const belowRealSfc = (s, p) => s.tipus === 'model' && modelSfcCutoff != null && p.pressure_mb > modelSfcCutoff;
 
+  // Com que els nivells del model son fixos (1000, 925, 850hPa...), tallar
+  // nomes filtrant punts deixa un buit visible entre l'ultim nivell vàlid
+  // i la pressió de superfície real -- s'interpola un punt (T, Td, vent)
+  // exactament a aquesta pressió perque la corba hi arribi amb precisió,
+  // igual que la parcel·la del LCL parteix d'un valor exacte i no d'un
+  // nivell de reixeta.
+  function interpModelSfcPoint(profile, cutoff){
+    const sorted = (profile || [])
+      .filter(p => p.pressure_mb != null)
+      .slice()
+      .sort((a, b) => a.pressure_mb - b.pressure_mb);
+    for(let i = 0; i < sorted.length - 1; i++){
+      const lo = sorted[i], hi = sorted[i + 1];
+      if(lo.pressure_mb <= cutoff && cutoff <= hi.pressure_mb){
+        const span = hi.pressure_mb - lo.pressure_mb;
+        const frac = span > 0 ? (cutoff - lo.pressure_mb) / span : 0;
+        const lerp = (a, b) => (a == null || b == null) ? null : a + (b - a) * frac;
+        const lerpAngle = (a, b) => {
+          if(a == null || b == null) return null;
+          const diff = ((b - a + 540) % 360) - 180;
+          return (a + diff * frac + 360) % 360;
+        };
+        return {
+          pressure_mb: cutoff,
+          temp_c: lerp(lo.temp_c, hi.temp_c),
+          rh_pct: lerp(lo.rh_pct, hi.rh_pct),
+          alt_msl_m: lerp(lo.alt_msl_m, hi.alt_msl_m),
+          wind_speed_ms: lerp(lo.wind_speed_ms, hi.wind_speed_ms),
+          wind_dir_deg: lerpAngle(lo.wind_dir_deg, hi.wind_dir_deg)
+        };
+      }
+    }
+    return null;
+  }
+  if(modelSfcCutoff != null){
+    sondes.forEach(x => {
+      if(x.s.tipus !== 'model') return;
+      const sfcPt = interpModelSfcPoint(x.s.profile, modelSfcCutoff);
+      if(sfcPt) x.s = { ...x.s, profile: (x.s.profile || []).concat([sfcPt]) };
+    });
+  }
+
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
   const plotWForRanges = width - marginLeft - barbZoneWidth, plotHForRanges = plotHForSlider;
   // Eixos ajustats a partir de TOTES les sondes d'aquest incendi (no nomes
