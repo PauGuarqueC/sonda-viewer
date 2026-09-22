@@ -2096,6 +2096,21 @@ function renderSkewT(){
     sondes.push({ s: { sond_id: md.label, tipus: 'model', profile: md.profile }, color: md.color });
   });
 
+  // Pressió de superfície real (de les sondes triades, no del model): els
+  // perfils de model fan servir nivells de pressió estàndard fixos (1000hPa
+  // inclòs) que poden quedar per sota del terreny real al punt de
+  // llançament, sobretot en zones de muntanya. Es talla la corba del model
+  // en aquesta pressió, igual que ja fa la parcel·la interactiva del LCL
+  // (drawParcelFromLCL, que també pren la pressió de superfície de la
+  // primera sonda triada com a límit inferior).
+  const realSfcPressures = sondes
+    .filter(x => x.s.tipus !== 'model')
+    .map(x => (x.s.profile || []).find(p => p.pressure_mb != null))
+    .filter(Boolean)
+    .map(p => p.pressure_mb);
+  const modelSfcCutoff = realSfcPressures.length ? Math.min(...realSfcPressures) : null;
+  const belowRealSfc = (s, p) => s.tipus === 'model' && modelSfcCutoff != null && p.pressure_mb > modelSfcCutoff;
+
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
   const plotWForRanges = width - marginLeft - barbZoneWidth, plotHForRanges = plotHForSlider;
   // Eixos ajustats a partir de TOTES les sondes d'aquest incendi (no nomes
@@ -2183,7 +2198,7 @@ function renderSkewT(){
   // --- dades: T continu, Td discontinu ---
   sondes.forEach(({s, color}) => {
     const pts = (s.profile || [])
-      .filter(p => p.pressure_mb != null && p.temp_c != null)
+      .filter(p => p.pressure_mb != null && p.temp_c != null && !belowRealSfc(s, p))
       .sort((a, b) => b.pressure_mb - a.pressure_mb);
     if(!pts.length) return;
 
@@ -2358,7 +2373,7 @@ function renderSkewT(){
   const barbColX = plotRight + 12;
   sondes.forEach(({s, color}, sIdx) => {
     const pts = (s.profile || [])
-      .filter(p => p.pressure_mb != null && p.wind_speed_ms != null && p.wind_dir_deg != null)
+      .filter(p => p.pressure_mb != null && p.wind_speed_ms != null && p.wind_dir_deg != null && !belowRealSfc(s, p))
       .sort((a, b) => b.pressure_mb - a.pressure_mb);
     const barbX = barbColX + sIdx * 20;
     let lastY = -Infinity;
