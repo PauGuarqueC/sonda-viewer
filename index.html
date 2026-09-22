@@ -1373,7 +1373,7 @@ function verticalRefLinePlugin(xValue, label, color){
   };
 }
 
-function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
+function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraTopPadding, afterLayoutCallback){
   const xMin = axisMax[axisKey].min;
   const xMax = axisMax[axisKey].max;
   const yMin = axisMax.height.min;
@@ -1401,10 +1401,12 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals){
     data: { datasets },
     plugins: [
       ...(axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : []),
-      horizontalRefLinesPlugin(computeRefLinesForActiveSondes)
+      horizontalRefLinesPlugin(computeRefLinesForActiveSondes),
+      { id: 'syncPlugin_'+canvasId, afterLayout(chart){ syncMiniSliderToChart(chart); if(afterLayoutCallback) afterLayoutCallback(chart); } }
     ],
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
+      layout: { padding: { top: extraTopPadding || 0 } },
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
         y: { type:'linear', min:yMin, max:yMax, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
@@ -1484,7 +1486,7 @@ const windBarbsPlugin = {
   }
 };
 
-function makeWindChart(){
+function makeWindChart(extraTopPadding){
   const sondes = activeSondes();
   const xMin = axisMax.wind.min;
   const xMax = axisMax.wind.max;
@@ -1512,9 +1514,10 @@ function makeWindChart(){
   return new Chart(ctx, {
     type:'line',
     data:{ datasets },
-    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(computeRefLinesForActiveSondes)],
+    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(computeRefLinesForActiveSondes), { id: 'syncPlugin_chartWind', afterLayout(chart){ syncMiniSliderToChart(chart); } }],
     options:{
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
+      layout: { padding: { top: extraTopPadding || 0 } },
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
       scales:{
         x:{ type:'linear', min:xMin, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
@@ -2556,12 +2559,54 @@ function downloadSkewTImage(){
 }
 document.getElementById('downloadSkewtBtn').addEventListener('click', downloadSkewTImage);
 
+// El gràfic de θᵥ és l'únic que mostra els números de l'eix d'alçada
+// (vegeu 'display: canvasId===chartTheta' a makeMultiChart) -- Chart.js
+// reserva, només per a ell, uns quants píxels extra a dalt perquè
+// l'etiqueta "4.500" no quedi tallada per la vora superior, cosa que el
+// deixava lleugerament més baix d'alçada útil que els altres tres. Es
+// mesura aquest marge un cop creat i s'aplica igual als altres tres
+// (via 'extraTopPadding') perquè els quatre tinguin la mateixa alçada.
+//
+// A més, cada mini-slider de sota es sincronitza (marge/amplada) amb
+// l'àrea de dades real del seu propi gràfic (chart.chartArea), que no
+// és tot l'ample del bloc -- cada gràfic reserva el seu propi marge
+// esquerre/dret (números de l'eix, barbes de vent...).
+// syncMiniSliderToChart es crida des del hook afterLayout de cada gràfic
+// (vegeu syncPlugin_* a makeMultiChart/makeWindChart), no des d'onResize:
+// chart.chartArea encara no existeix en el primer resize sincron que
+// Chart.js dispara en construir el gràfic (responsive:true), i llegir-lo
+// en aquell moment petava. afterLayout només es crida un cop el layout
+// (i per tant chartArea) ja està calculat, tant en la creació inicial com
+// en qualsevol redimensionament posterior.
+function syncMiniSliderToChart(chart){
+  const area = chart.chartArea;
+  if(!area) return;
+  const canvas = chart.canvas;
+  const block = canvas.closest('.block');
+  const track = block && block.querySelector('.mini-slider .dual-slider');
+  if(!track) return;
+  track.style.flex = 'none';
+  track.style.marginLeft = area.left + 'px';
+  track.style.width = Math.max(0, area.right - area.left) + 'px';
+}
+
 function renderAllCharts(){
   destroyCharts();
-  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)', 'theta', 'K', 1);
-  charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', 'rh', '%', 0);
-  charts.wind = makeWindChart();
-  charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', 'rise', 'm/s', 1);
+  // El gràfic de θᵥ es crea primer; el seu callback afterLayout (cridat un
+  // cop chart.chartArea ja està disponible) mesura el marge superior que
+  // Chart.js li reserva per als números de l'eix d'alçada i crea els altres
+  // tres gràfics amb el mateix marge, perquè els quatre acabin amb la
+  // mateixa alçada útil. El guard othersBuilt evita repetir-ho en
+  // redimensionaments posteriors (afterLayout es torna a cridar llavors).
+  let othersBuilt = false;
+  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)', 'theta', 'K', 1, 0, (chart) => {
+    if(othersBuilt) return;
+    othersBuilt = true;
+    const topPad = chart.chartArea.top;
+    charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', 'rh', '%', 0, topPad);
+    charts.wind = makeWindChart(topPad);
+    charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', 'rise', 'm/s', 1, topPad);
+  });
   renderSkewT();
   renderDrift();
 }
