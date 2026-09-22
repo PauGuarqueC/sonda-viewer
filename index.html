@@ -277,13 +277,13 @@
         <span class="hint">eix d'alçada compartit entre panells i sondes</span>
         <button type="button" id="downloadChartsBtn" class="toggle-btn" style="margin-left:auto;">Descarrega imatge</button>
       </div>
-      <div style="display:flex; gap:6px; align-items:flex-start;">
+      <div style="display:flex; gap:2px; align-items:flex-start;">
       <div class="vslider-col" style="margin-top:36px;">
-        <span id="sliderHeightMaxVal"></span>
+        <span id="sliderHeightMaxVal" style="display:none;"></span>
         <div class="vslider-wrap vflip" style="height:430px;">
           <div class="dual-slider" style="width:430px;"><input type="range" id="sliderHeightMin"><input type="range" id="sliderHeightMax"></div>
         </div>
-        <span id="sliderHeightMinVal"></span>
+        <span id="sliderHeightMinVal" style="display:none;"></span>
       </div>
       <div class="profile-strip" style="flex:1; min-width:0;">
         <div class="block">
@@ -772,6 +772,8 @@ async function queryModelHost(host, modelParam, ref, launchDt, dateStr){
     if(t == null || gh == null) return;
     profile.push({
       alt_msl_m: gh,
+      pressure_mb: p,
+      temp_c: t,
       theta_v_k: thetaVFromTRhP(t, rh, p),
       rh_pct: rh != null ? rh : null,
       wind_speed_ms: ws != null ? ws : null,
@@ -1713,6 +1715,14 @@ function renderSkewT(){
     .map(id => INCENDI.sondes.find(s => s.sond_id === id))
     .filter(Boolean)
     .map(s => ({ s, color: allSondaColors[s.sond_id] || '#333' }));
+
+  // Models actius (les mateixes caselles que als gràfics de dalt -- vegeu
+  // modelDataMap/buildModelCheckboxes): es dibuixen igual que una sonda
+  // més (T continu, Td discontinu, barbes de vent, LCL i llegenda), amb
+  // un "sonde" fictici que reutilitza el mateix perfil ja carregat.
+  Object.values(modelDataMap).forEach(md => {
+    sondes.push({ s: { sond_id: md.label, tipus: 'model', profile: md.profile }, color: md.color });
+  });
 
   const barbZoneWidth = sondes.length ? 16 + sondes.length * 18 : 10;
   const plotWForRanges = width - marginLeft - barbZoneWidth, plotHForRanges = plotHForSlider;
