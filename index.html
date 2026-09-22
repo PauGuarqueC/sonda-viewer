@@ -2026,7 +2026,7 @@ function renderSkewT(){
     for(const p of pts){
       const y = toY(p.pressure_mb);
       if(y < 20 || y > plotBottom) continue;
-      if(Math.abs(y - lastY) < 16) continue; // evita amuntegar barbes massa juntes
+      if(Math.abs(y - lastY) < 12) continue; // evita amuntegar barbes massa juntes
       drawWindBarb(ctx, barbX, y, p.wind_speed_ms, p.wind_dir_deg, color);
       lastY = y;
     }
