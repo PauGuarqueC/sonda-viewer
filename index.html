@@ -207,19 +207,23 @@
 <body>
 
 <header>
-  <h1>Visor de <span>sondes</span></h1>
+  <h1 data-i18n-html="app.title">Visor de <span>sondes</span></h1>
   <nav>
-    <a href="#/" id="navList">Incendis</a>
-    <a href="#/upload" id="navUpload">+ Puja una sonda</a>
+    <a href="#/" id="navList" data-i18n="nav.fires">Incendis</a>
+    <a href="#/upload" id="navUpload" data-i18n="nav.upload">+ Puja una sonda</a>
   </nav>
+  <div class="lang-toggle" style="display:flex; gap:4px;">
+    <button type="button" id="langCa" class="toggle-btn active">CA</button>
+    <button type="button" id="langEn" class="toggle-btn">EN</button>
+  </div>
 </header>
 
 <div id="gate">
   <div class="box">
-    <h2>Contrasenya de visualització</h2>
-    <input type="password" id="gateInput" placeholder="contrasenya" autofocus>
-    <button id="gateBtn">Entra</button>
-    <div class="err" id="gateErr">Contrasenya incorrecta.</div>
+    <h2 data-i18n="gate.title">Contrasenya de visualització</h2>
+    <input type="password" id="gateInput" data-i18n-placeholder="gate.placeholder" placeholder="contrasenya" autofocus>
+    <button id="gateBtn" data-i18n="gate.enter">Entra</button>
+    <div class="err" id="gateErr" data-i18n="gate.wrong">Contrasenya incorrecta.</div>
   </div>
 </div>
 
@@ -227,16 +231,16 @@
 <div class="view" id="view-list">
   <main>
     <div class="list-toggle" style="display:flex; gap:6px; margin-bottom:14px;">
-      <button type="button" id="toggleListView" class="toggle-btn active">Llista</button>
-      <button type="button" id="toggleMapView" class="toggle-btn">Mapa</button>
+      <button type="button" id="toggleListView" class="toggle-btn active" data-i18n="list.viewList">Llista</button>
+      <button type="button" id="toggleMapView" class="toggle-btn" data-i18n="list.viewMap">Mapa</button>
     </div>
     <div id="listFilters" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:4px; font-family:var(--font-mono); font-size:11px;">
-      <input type="text" id="filterText" placeholder="cerca per nom..." style="flex:1; min-width:140px; padding:4px 7px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:11px;">
+      <input type="text" id="filterText" data-i18n-placeholder="list.searchPlaceholder" placeholder="cerca per nom..." style="flex:1; min-width:140px; padding:4px 7px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:11px;">
       <select id="filterAny" style="padding:4px 6px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:11px;">
-        <option value="">tots els anys</option>
+        <option value="" data-i18n="list.allYears">tots els anys</option>
       </select>
       <label style="display:flex; align-items:center; gap:4px; color:var(--text-dim); white-space:nowrap;">
-        <input type="checkbox" id="filterAmbient"> té sonda ambient
+        <input type="checkbox" id="filterAmbient"> <span data-i18n="list.hasAmbient">té sonda ambient</span>
       </label>
     </div>
     <div id="filterCount" style="text-align:right; color:var(--text-dim); font-family:var(--font-mono); font-size:11px; margin:10px 0 18px;"></div>
@@ -249,32 +253,32 @@
 <!-- ================= VISTA: detall d'incendi ================= -->
 <div class="view" id="view-incendi">
   <div class="incendi-header">
-    <h2>Incendi <span id="incendiName">—</span></h2>
-    <span class="sub">superposició de sondes amb eixos compartits</span>
-    <a href="#/">← tots els incendis</a>
+    <h2 data-i18n-html="incendi.headerTitle">Incendi <span id="incendiName">—</span></h2>
+    <span class="sub" data-i18n="incendi.headerSub">superposició de sondes amb eixos compartits</span>
+    <a href="#/" data-i18n="incendi.backAll">← tots els incendis</a>
   </div>
 
   <div id="incendiMain">
     <div id="sidebar">
-      <h3>Sondes d'aquest incendi</h3>
+      <h3 data-i18n="sidebar.title">Sondes d'aquest incendi</h3>
       <div id="sondaList"></div>
       <div id="editStatus" style="font-family:var(--font-mono); font-size:11px; color:var(--text-dim); min-height:14px; margin-top:4px;"></div>
-      <div class="sidebar-note">
+      <div class="sidebar-note" data-i18n="sidebar.colorNote">
         Ambient en tons blau-verdosos, columna en tons vermell-taronjats.
         Amb més d'una sonda activa del mateix tipus, cada una porta un to diferent.
       </div>
 
       <div class="sidebar-note" style="border-top:1px solid var(--panel-border); margin-top:14px; padding-top:12px;">
-        <div style="font-weight:500; color:var(--text); margin-bottom:6px;">Perfils de model</div>
+        <div style="font-weight:500; color:var(--text); margin-bottom:6px;" data-i18n="sidebar.modelProfiles">Perfils de model</div>
         <div id="modelCheckList"></div>
       </div>
     </div>
 
     <div id="incendiContent">
       <div class="section-title">
-        <h3>Perfil vertical</h3>
-        <span class="hint">eix d'alçada compartit entre panells i sondes</span>
-        <button type="button" id="downloadChartsBtn" class="toggle-btn" style="margin-left:auto;">Descarrega imatge</button>
+        <h3 data-i18n="profile.title">Perfil vertical</h3>
+        <span class="hint" data-i18n="profile.hint">eix d'alçada compartit entre panells i sondes</span>
+        <button type="button" id="downloadChartsBtn" class="toggle-btn" style="margin-left:auto;" data-i18n="common.downloadImage">Descarrega imatge</button>
       </div>
       <div style="display:flex; gap:2px; align-items:flex-start;">
       <div class="vslider-col" style="margin-top:36px;">
@@ -286,7 +290,7 @@
       </div>
       <div class="profile-strip" style="flex:1; min-width:0;">
         <div class="block">
-          <h4>θᵥ potencial virtual (K)</h4>
+          <h4 data-i18n="chart.thetaTitle">θᵥ potencial virtual (K)</h4>
           <div class="chart-h"><canvas id="chartTheta"></canvas></div>
           <div class="mini-slider">
             <div class="dual-slider"><input type="range" id="sliderThetaMin"><input type="range" id="sliderThetaMax"></div>
@@ -294,7 +298,7 @@
           </div>
         </div>
         <div class="block">
-          <h4>Humitat relativa (%)</h4>
+          <h4 data-i18n="chart.rhTitle">Humitat relativa (%)</h4>
           <div class="chart-h"><canvas id="chartRh"></canvas></div>
           <div class="mini-slider">
             <div class="dual-slider"><input type="range" id="sliderRhMin"><input type="range" id="sliderRhMax"></div>
@@ -302,7 +306,7 @@
           </div>
         </div>
         <div class="block">
-          <h4>Vent — velocitat i direcció</h4>
+          <h4 data-i18n="chart.windTitle">Vent — velocitat i direcció</h4>
           <div class="chart-h"><canvas id="chartWind"></canvas></div>
           <div class="mini-slider">
             <div class="dual-slider"><input type="range" id="sliderWindMin"><input type="range" id="sliderWindMax"></div>
@@ -310,7 +314,7 @@
           </div>
         </div>
         <div class="block">
-          <h4>Velocitat d'ascens (m/s)</h4>
+          <h4 data-i18n="chart.riseTitle">Velocitat d'ascens (m/s)</h4>
           <div class="chart-h"><canvas id="chartRise"></canvas></div>
           <div class="mini-slider">
             <div class="dual-slider"><input type="range" id="sliderRiseMin"><input type="range" id="sliderRiseMax"></div>
@@ -323,14 +327,14 @@
       <div class="lower">
         <div class="block">
           <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            Deriva horitzontal
+            <span data-i18n="drift.title">Deriva horitzontal</span>
             <select id="driftColorBy" style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);border:1px solid var(--panel-border);border-radius:4px;padding:2px 4px;">
-              <option value="alt">color = alçada</option>
-              <option value="rise">color = velocitat d'ascens</option>
-              <option value="rh">color = humitat relativa</option>
+              <option value="alt" data-i18n="drift.colorAlt">color = alçada</option>
+              <option value="rise" data-i18n="drift.colorRise">color = velocitat d'ascens</option>
+              <option value="rh" data-i18n="drift.colorRh">color = humitat relativa</option>
             </select>
             <label class="toggle-btn" style="cursor:pointer; font-weight:normal;">
-              Perímetre (GeoJSON)
+              <span data-i18n="drift.perimeter">Perímetre (GeoJSON)</span>
               <input type="file" id="perimeterFile" accept=".json,.geojson,.kml,.kmz" style="display:none;">
             </label>
             <span id="perimeterStatus" style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim);"></span>
@@ -349,7 +353,7 @@
         <div class="block">
           <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
             <h3 style="font-size:13px;font-weight:500;color:var(--text-dim);margin:0;">Skew-T</h3>
-            <button type="button" id="downloadSkewtBtn" class="toggle-btn" style="margin-left:auto;">Descarrega imatge</button>
+            <button type="button" id="downloadSkewtBtn" class="toggle-btn" style="margin-left:auto;" data-i18n="common.downloadImage">Descarrega imatge</button>
           </div>
           <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; font-family:var(--font-mono); font-size:10.5px;">
             <select id="skewtSonda1" style="flex:1; padding:3px 4px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;"></select>
@@ -368,8 +372,8 @@
           <div class="dual-slider" style="max-width:110px; height:16px; margin:2px auto 0;"><input type="range" id="sliderSkewtTShift"></div>
           <div id="skewtParcelPanel" style="display:none; margin-top:6px; padding:6px 8px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:10.5px;">
             <div style="display:flex; justify-content:space-between; align-items:center; color:var(--text-dim);">
-              <span>LCL <span id="skewtParcelLclP"></span>mb — superfície (<span id="skewtParcelSfcP"></span>mb): T <span id="skewtParcelSfcT"></span>°C, Td <span id="skewtParcelSfcTd"></span>°C</span>
-              <a href="#" id="skewtParcelHide" style="color:var(--text-dim);">✕ deixa anar</a>
+              <span data-i18n-html="skewt.parcelInfo">LCL <span id="skewtParcelLclP"></span>mb — superfície (<span id="skewtParcelSfcP"></span>mb): T <span id="skewtParcelSfcT"></span>°C, Td <span id="skewtParcelSfcTd"></span>°C</span>
+              <a href="#" id="skewtParcelHide" style="color:var(--text-dim);" data-i18n="skewt.parcelRelease">✕ deixa anar</a>
             </div>
           </div>
         </div>
@@ -382,12 +386,12 @@
 <div class="view" id="view-upload">
   <div class="wrap">
     <div class="card" id="tokenCard">
-      <label>Contrasenya de pujada</label>
+      <label data-i18n="upload.pwLabel">Contrasenya de pujada</label>
       <div class="token-row">
-        <input type="password" id="uploadPw" placeholder="contrasenya compartida">
-        <button type="button" id="saveUploadPw" style="margin-top:0;">Desa</button>
+        <input type="password" id="uploadPw" data-i18n-placeholder="upload.pwPlaceholder" placeholder="contrasenya compartida">
+        <button type="button" id="saveUploadPw" style="margin-top:0;" data-i18n="common.save">Desa</button>
       </div>
-      <div class="hint">
+      <div class="hint" data-i18n="upload.pwHint">
         Es desa només al teu navegador. Aquesta contrasenya no dona accés
         directe al repo — un petit proxy (Cloudflare Worker) és qui parla amb
         GitHub, amb el seu propi token, que mai arriba al navegador.
@@ -396,16 +400,16 @@
 
     <div class="card">
       <form id="uploadForm">
-        <label>ZIP dels llançaments (pots repetir "Tria fitxers" tants cops com calgui, es van afegint)</label>
+        <label data-i18n="upload.zipLabel">ZIP dels llançaments (pots repetir "Tria fitxers" tants cops com calgui, es van afegint)</label>
         <input type="file" id="zipfile" accept=".zip" multiple>
 
-        <label>Incendi</label>
-        <input type="text" id="incendiInput" required placeholder="p.ex. Alfarràs">
+        <label data-i18n="upload.fireLabel">Incendi</label>
+        <input type="text" id="incendiInput" required data-i18n-placeholder="upload.firePlaceholder" placeholder="p.ex. Alfarràs">
 
         <div id="fileList" style="margin-top:14px;"></div>
 
-        <button type="submit" id="submitBtn">Puja i processa</button>
-        <button type="button" id="retryBtn" style="display:none; background:transparent; color:var(--red); border:1px solid var(--red); margin-left:8px;">Reintenta els fallits</button>
+        <button type="submit" id="submitBtn" data-i18n="upload.submit">Puja i processa</button>
+        <button type="button" id="retryBtn" style="display:none; background:transparent; color:var(--red); border:1px solid var(--red); margin-left:8px;" data-i18n="upload.retry">Reintenta els fallits</button>
       </form>
       <div id="uploadStatus"></div>
     </div>
@@ -413,6 +417,325 @@
 </div>
 
 <script>
+// ============================================================
+// i18n (CA/EN) -- capa additiva de traduccio, no toca la logica
+// ============================================================
+const I18N = {
+  ca: {
+    'app.title': 'Visor de <span>sondes</span>',
+    'nav.fires': 'Incendis',
+    'nav.upload': '+ Puja una sonda',
+    'gate.title': 'Contrasenya de visualització',
+    'gate.placeholder': 'contrasenya',
+    'gate.enter': 'Entra',
+    'gate.wrong': 'Contrasenya incorrecta.',
+    'list.viewList': 'Llista',
+    'list.viewMap': 'Mapa',
+    'list.searchPlaceholder': 'cerca per nom...',
+    'list.allYears': 'tots els anys',
+    'list.hasAmbient': 'té sonda ambient',
+    'list.count': '{filtered} de {total} incendi{plural}',
+    'list.noFiresYet': 'Encara no hi ha cap incendi registrat.',
+    'list.noMatch': 'Cap incendi coincideix amb els filtres.',
+    'list.sondCount': '{n} sond{plural}',
+    'list.updated': 'actualitzat {date}',
+    'list.open': 'obrir →',
+    'list.noCoords': 'Cap incendi amb ubicació coneguda encara.',
+    'incendi.headerTitle': 'Incendi <span id="incendiName">—</span>',
+    'incendi.headerSub': 'superposició de sondes amb eixos compartits',
+    'incendi.backAll': '← tots els incendis',
+    'incendi.noData': 'Aquest incendi encara no té dades processades.',
+    'incendi.loadError': 'No s\'han pogut carregar les dades d\'aquest incendi.',
+    'sidebar.title': 'Sondes d\'aquest incendi',
+    'sidebar.colorNote': 'Ambient en tons blau-verdosos, columna en tons vermell-taronjats. Amb més d\'una sonda activa del mateix tipus, cada una porta un to diferent.',
+    'sidebar.modelProfiles': 'Perfils de model',
+    'profile.title': 'Perfil vertical',
+    'profile.hint': 'eix d\'alçada compartit entre panells i sondes',
+    'common.downloadImage': 'Descarrega imatge',
+    'common.save': 'Desa',
+    'chart.thetaTitle': 'θᵥ potencial virtual (K)',
+    'chart.rhTitle': 'Humitat relativa (%)',
+    'chart.windTitle': 'Vent — velocitat i direcció',
+    'chart.riseTitle': 'Velocitat d\'ascens (m/s)',
+    'chart.thetaAxis': 'θᵥ (K)',
+    'chart.rhAxis': 'HR (%)',
+    'chart.heightAxis': 'Alçada ASL (m)',
+    'drift.title': 'Deriva horitzontal',
+    'drift.colorAlt': 'color = alçada',
+    'drift.colorRise': 'color = velocitat d\'ascens',
+    'drift.colorRh': 'color = humitat relativa',
+    'drift.perimeter': 'Perímetre (GeoJSON)',
+    'drift.noTrack': 'Sense track disponible per a les sondes actives.',
+    'drift.legendMsl': '(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>',
+    'drift.legendField': '({label}) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>',
+    'drift.fieldAlt': 'alçada',
+    'drift.fieldRise': 'velocitat d\'ascens',
+    'drift.fieldRh': 'humitat relativa',
+    'drift.popupLaunch': '<b>{id}</b><br>llançament · {time} UTC',
+    'drift.popupPeak': '<b>{id}</b><br>pic · {alt} m AGL',
+    'drift.popupLanding': '<b>{id}</b><br>predicció d\'aterratge',
+    'drift.isochrone': 'Isocrona {label}',
+    'skewt.none': '(cap)',
+    'skewt.typeChange': 'canvia el tipus',
+    'skewt.parcelInfo': 'LCL <span id="skewtParcelLclP"></span>mb — superfície (<span id="skewtParcelSfcP"></span>mb): T <span id="skewtParcelSfcT"></span>°C, Td <span id="skewtParcelSfcTd"></span>°C',
+    'skewt.parcelRelease': '✕ deixa anar',
+    'skewt.lclLabel': 'LCL {alt}m',
+    'skewt.legendLabel': '{tipus} — {label}',
+    'sonda.tipeAmbient': 'ambient',
+    'sonda.tipeColumna': 'columna',
+    'sonda.options': 'opcions',
+    'sonda.delete': '🗑 Elimina sonda',
+    'sonda.elevTitle': 'alçada de llançament (m ASL) — corregeix-la si el GPS/altímetre ha fet un mal fix inicial',
+    'sonda.maxActive': 'Com a màxim es poden mostrar {max} sondes alhora als gràfics. Desmarca\'n alguna abans d\'afegir-ne una altra.',
+    'sonda.removeFromList': 'Treu de la llista',
+    'model.icon_eu': 'ICON-EU',
+    'model.arome': 'AROME França',
+    'model.ecmwf': 'ECMWF IFS (0.25°)',
+    'model.era5': 'ERA5 (CDS)',
+    'model.noActiveSonde': 'Cap sonda activa amb punt de llançament conegut.',
+    'model.era5Reanalysis': '{date} {hour}h UTC (reanàlisi)',
+    'model.era5ReanalysisShort': 'ERA5 (CDS) · reanàlisi',
+    'model.era5Unavailable': 'ERA5 no disponible per aquesta sonda (era massa recent quan es va processar, o el CDS no va respondre en aquell moment).',
+    'model.noLaunchTime': 'No s\'ha pogut determinar la data/hora de llançament.',
+    'model.loading': 'Carregant...',
+    'model.dateHourUtc': '{date} {hour}h UTC ({source})',
+    'model.sourceHistorical': 'arxiu',
+    'model.sourceForecast': 'previsió',
+    'model.errorUnknown': 'desconegut',
+    'model.errorPrefix': 'Error: {msg}',
+    'model.errorReasonUnknown': 'Error desconegut',
+    'model.noDataForHour': 'Sense dades per aquesta hora',
+    'model.noLevelWithData': 'Cap nivell de pressió amb dades',
+    'status.updating': 'Actualitzant... ({i}/{max})',
+    'status.notPublishedYet': 'Encara no s\'ha publicat el canvi — prova de tornar-hi d\'aquí una estona.',
+    'status.uploadPwPrompt': 'Contrasenya de pujada (cal per editar sondes):',
+    'status.uploadPwPromptDelete': 'Contrasenya de pujada (cal per eliminar sondes):',
+    'status.uploadPwPromptPerimeter': 'Contrasenya de pujada (cal per afegir el perímetre):',
+    'status.serverError': 'Error del servidor ({status})',
+    'status.typeChangeFailed': 'No s\'ha pogut canviar el tipus: {msg}',
+    'status.confirmDelete': 'Elimina la sonda {label}? Aquesta acció no es pot desfer.',
+    'status.deleting': 'Eliminant {label}...',
+    'status.deleteFailed': 'No s\'ha pogut eliminar la sonda: {msg}',
+    'status.elevFailed': 'No s\'ha pogut corregir l\'alçada: {msg}',
+    'status.kmzNoKml': 'el .kmz no conté cap fitxer .kml a dins',
+    'status.kmlInvalid': 'KML/KMZ no vàlid: {msg}',
+    'status.fileNotJson': 'Fitxer no és JSON vàlid.',
+    'status.noGeometry': 'No s\'ha trobat cap geometria (Polygon/LineString/Point) al KML.',
+    'status.kmlMalformed': 'KML mal format',
+    'status.uploading': 'Pujant...',
+    'status.updatingDots': 'Actualitzant...',
+    'status.uploadError': 'Error: {msg}',
+    'upload.pwLabel': 'Contrasenya de pujada',
+    'upload.pwPlaceholder': 'contrasenya compartida',
+    'upload.pwHint': 'Es desa només al teu navegador. Aquesta contrasenya no dona accés directe al repo — un petit proxy (Cloudflare Worker) és qui parla amb GitHub, amb el seu propi token, que mai arriba al navegador.',
+    'upload.zipLabel': 'ZIP dels llançaments (pots repetir "Tria fitxers" tants cops com calgui, es van afegint)',
+    'upload.fireLabel': 'Incendi',
+    'upload.firePlaceholder': 'p.ex. Alfarràs',
+    'upload.submit': 'Puja i processa',
+    'upload.retry': 'Reintenta els fallits',
+    'upload.pwSaved': 'Contrasenya desada en aquest navegador.',
+    'upload.statusPending': 'pendent',
+    'upload.statusUploading': 'pujant...',
+    'upload.statusOk': '✓ fet',
+    'upload.statusError': '✗ {msg}',
+    'upload.errorGeneric': 'error',
+    'upload.removeFile': 'Treu de la llista',
+    'upload.needPassword': 'Cal la contrasenya de pujada (a dalt).',
+    'upload.needZip': 'Selecciona almenys un ZIP.',
+    'upload.needFireName': 'Cal el nom de l\'incendi.',
+    'upload.nothingPending': 'No hi ha res pendent de pujar.',
+    'upload.uploadingFiles': 'Pujant fitxers...',
+    'upload.batchFailed': 'La pujada conjunta ha fallat ({msg}). Provant d\'un en un...',
+    'upload.uploadingFile': 'Pujant {name}...',
+    'upload.noneUploaded': 'Cap fitxer s\'ha pogut pujar. Revisa els errors de la llista i reintenta.',
+    'upload.someFailed': '{n} pujades, però alguna ha fallat — reintenta-la abans de continuar si cal.',
+    'upload.processing': 'Processant dades... ({i}/{max})',
+    'upload.done': 'Fet! Obrint l\'incendi...',
+    'upload.notDoneYet': 'Encara no s\'ha completat el processament (pot trigar una mica més amb moltes sondes de cop). Comprova-ho a {url}, o ',
+    'upload.goToFireNow': 'ves a l\'incendi ara mateix',
+    'chart.downloadTitleProfile': 'Incendi {name} — perfil vertical',
+    'chart.downloadTitleSkewt': 'Incendi {name} — Skew-T',
+  },
+  en: {
+    'app.title': '<span>Radiosonde</span> viewer',
+    'nav.fires': 'Fires',
+    'nav.upload': '+ Upload a sonde',
+    'gate.title': 'Viewing password',
+    'gate.placeholder': 'password',
+    'gate.enter': 'Enter',
+    'gate.wrong': 'Incorrect password.',
+    'list.viewList': 'List',
+    'list.viewMap': 'Map',
+    'list.searchPlaceholder': 'search by name...',
+    'list.allYears': 'all years',
+    'list.hasAmbient': 'has ambient sonde',
+    'list.count': '{filtered} of {total} fire{plural}',
+    'list.noFiresYet': 'No fires registered yet.',
+    'list.noMatch': 'No fires match the filters.',
+    'list.sondCount': '{n} sonde{plural}',
+    'list.updated': 'updated {date}',
+    'list.open': 'open →',
+    'list.noCoords': 'No fires with a known location yet.',
+    'incendi.headerTitle': 'Fire <span id="incendiName">—</span>',
+    'incendi.headerSub': 'sonde overlay with shared axes',
+    'incendi.backAll': '← all fires',
+    'incendi.noData': 'This fire does not have processed data yet.',
+    'incendi.loadError': 'This fire\'s data could not be loaded.',
+    'sidebar.title': 'Sondes of this fire',
+    'sidebar.colorNote': 'Ambient in blue-green tones, column in red-orange tones. With more than one active sonde of the same type, each one gets a different shade.',
+    'sidebar.modelProfiles': 'Model profiles',
+    'profile.title': 'Vertical profile',
+    'profile.hint': 'height axis shared between panels and sondes',
+    'common.downloadImage': 'Download image',
+    'common.save': 'Save',
+    'chart.thetaTitle': 'Virtual potential θᵥ (K)',
+    'chart.rhTitle': 'Relative humidity (%)',
+    'chart.windTitle': 'Wind — speed and direction',
+    'chart.riseTitle': 'Ascent rate (m/s)',
+    'chart.thetaAxis': 'θᵥ (K)',
+    'chart.rhAxis': 'RH (%)',
+    'chart.heightAxis': 'Height ASL (m)',
+    'drift.title': 'Horizontal drift',
+    'drift.colorAlt': 'color = height',
+    'drift.colorRise': 'color = ascent rate',
+    'drift.colorRh': 'color = relative humidity',
+    'drift.perimeter': 'Perimeter (GeoJSON)',
+    'drift.noTrack': 'No track available for the active sondes.',
+    'drift.legendMsl': '(MSL) · <span style="border-bottom:2px solid #999;">ascent</span> / <span style="border-bottom:2px dashed #999;">descent</span>',
+    'drift.legendField': '({label}) · <span style="border-bottom:2px solid #999;">ascent</span> / <span style="border-bottom:2px dashed #999;">descent</span>',
+    'drift.fieldAlt': 'height',
+    'drift.fieldRise': 'ascent rate',
+    'drift.fieldRh': 'relative humidity',
+    'drift.popupLaunch': '<b>{id}</b><br>launch · {time} UTC',
+    'drift.popupPeak': '<b>{id}</b><br>peak · {alt} m AGL',
+    'drift.popupLanding': '<b>{id}</b><br>landing prediction',
+    'drift.isochrone': 'Isochrone {label}',
+    'skewt.none': '(none)',
+    'skewt.typeChange': 'change the type',
+    'skewt.parcelInfo': 'LCL <span id="skewtParcelLclP"></span>mb — surface (<span id="skewtParcelSfcP"></span>mb): T <span id="skewtParcelSfcT"></span>°C, Td <span id="skewtParcelSfcTd"></span>°C',
+    'skewt.parcelRelease': '✕ release',
+    'skewt.lclLabel': 'LCL {alt}m',
+    'skewt.legendLabel': '{tipus} — {label}',
+    'sonda.tipeAmbient': 'ambient',
+    'sonda.tipeColumna': 'column',
+    'sonda.options': 'options',
+    'sonda.delete': '🗑 Delete sonde',
+    'sonda.elevTitle': 'launch elevation (m ASL) — correct it if the GPS/altimeter had a bad initial fix',
+    'sonda.maxActive': 'A maximum of {max} sondes can be shown at once on the charts. Uncheck one before adding another.',
+    'sonda.removeFromList': 'Remove from list',
+    'model.icon_eu': 'ICON-EU',
+    'model.arome': 'AROME France',
+    'model.ecmwf': 'ECMWF IFS (0.25°)',
+    'model.era5': 'ERA5 (CDS)',
+    'model.noActiveSonde': 'No active sonde with a known launch point.',
+    'model.era5Reanalysis': '{date} {hour}h UTC (reanalysis)',
+    'model.era5ReanalysisShort': 'ERA5 (CDS) · reanalysis',
+    'model.era5Unavailable': 'ERA5 not available for this sonde (it was too recent when processed, or the CDS did not respond at the time).',
+    'model.noLaunchTime': 'Could not determine the launch date/time.',
+    'model.loading': 'Loading...',
+    'model.dateHourUtc': '{date} {hour}h UTC ({source})',
+    'model.sourceHistorical': 'archive',
+    'model.sourceForecast': 'forecast',
+    'model.errorUnknown': 'unknown',
+    'model.errorPrefix': 'Error: {msg}',
+    'model.errorReasonUnknown': 'Unknown error',
+    'model.noDataForHour': 'No data for this hour',
+    'model.noLevelWithData': 'No pressure level with data',
+    'status.updating': 'Updating... ({i}/{max})',
+    'status.notPublishedYet': 'The change has not been published yet — try again in a little while.',
+    'status.uploadPwPrompt': 'Upload password (needed to edit sondes):',
+    'status.uploadPwPromptDelete': 'Upload password (needed to delete sondes):',
+    'status.uploadPwPromptPerimeter': 'Upload password (needed to add the perimeter):',
+    'status.serverError': 'Server error ({status})',
+    'status.typeChangeFailed': 'Could not change the type: {msg}',
+    'status.confirmDelete': 'Delete sonde {label}? This action cannot be undone.',
+    'status.deleting': 'Deleting {label}...',
+    'status.deleteFailed': 'Could not delete the sonde: {msg}',
+    'status.elevFailed': 'Could not correct the elevation: {msg}',
+    'status.kmzNoKml': 'the .kmz does not contain a .kml file inside',
+    'status.kmlInvalid': 'Invalid KML/KMZ: {msg}',
+    'status.fileNotJson': 'File is not valid JSON.',
+    'status.noGeometry': 'No geometry (Polygon/LineString/Point) found in the KML.',
+    'status.kmlMalformed': 'Malformed KML',
+    'status.uploading': 'Uploading...',
+    'status.updatingDots': 'Updating...',
+    'status.uploadError': 'Error: {msg}',
+    'upload.pwLabel': 'Upload password',
+    'upload.pwPlaceholder': 'shared password',
+    'upload.pwHint': 'Saved only in your browser. This password does not give direct access to the repo — a small proxy (Cloudflare Worker) talks to GitHub with its own token, which never reaches the browser.',
+    'upload.zipLabel': 'Launch ZIPs (you can repeat "Choose files" as many times as needed, they keep being added)',
+    'upload.fireLabel': 'Fire',
+    'upload.firePlaceholder': 'e.g. Alfarràs',
+    'upload.submit': 'Upload and process',
+    'upload.retry': 'Retry failed ones',
+    'upload.pwSaved': 'Password saved in this browser.',
+    'upload.statusPending': 'pending',
+    'upload.statusUploading': 'uploading...',
+    'upload.statusOk': '✓ done',
+    'upload.statusError': '✗ {msg}',
+    'upload.errorGeneric': 'error',
+    'upload.removeFile': 'Remove from list',
+    'upload.needPassword': 'The upload password is required (above).',
+    'upload.needZip': 'Select at least one ZIP.',
+    'upload.needFireName': 'The fire name is required.',
+    'upload.nothingPending': 'There is nothing pending to upload.',
+    'upload.uploadingFiles': 'Uploading files...',
+    'upload.batchFailed': 'The batch upload failed ({msg}). Trying one by one...',
+    'upload.uploadingFile': 'Uploading {name}...',
+    'upload.noneUploaded': 'No file could be uploaded. Check the errors in the list and retry.',
+    'upload.someFailed': '{n} uploaded, but some failed — retry it before continuing if needed.',
+    'upload.processing': 'Processing data... ({i}/{max})',
+    'upload.done': 'Done! Opening the fire...',
+    'upload.notDoneYet': 'Processing has not finished yet (it can take a bit longer with many sondes at once). Check at {url}, or ',
+    'upload.goToFireNow': 'go to the fire right now',
+    'chart.downloadTitleProfile': 'Fire {name} — vertical profile',
+    'chart.downloadTitleSkewt': 'Fire {name} — Skew-T',
+  }
+};
+let currentLang = localStorage.getItem('sonda_viewer_lang') || 'ca';
+
+function t(key, vars){
+  let s = (I18N[currentLang] && I18N[currentLang][key]) || (I18N.ca[key]) || key;
+  if(vars) Object.keys(vars).forEach(k => { s = s.replace('{'+k+'}', vars[k]); });
+  return s;
+}
+
+function applyStaticI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.getAttribute('data-i18n-html')); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.getAttribute('data-i18n-title')); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.getAttribute('data-i18n-placeholder')); });
+  document.documentElement.lang = currentLang;
+  document.title = currentLang === 'en' ? 'Radiosonde viewer' : 'Visor de sondes';
+  document.getElementById('langCa').classList.toggle('active', currentLang === 'ca');
+  document.getElementById('langEn').classList.toggle('active', currentLang === 'en');
+}
+
+function setLang(lang){
+  if(lang !== 'ca' && lang !== 'en') return;
+  currentLang = lang;
+  try{ localStorage.setItem('sonda_viewer_lang', lang); } catch(e){}
+  applyStaticI18n();
+  // refresca tot el contingut generat dinamicament que pugui estar visible
+  if(document.getElementById('view-list').classList.contains('active')){
+    populateYearFilter(lastListItems);
+    applyFilters();
+  }
+  if(document.getElementById('view-incendi').classList.contains('active') && INCENDI){
+    buildModelCheckboxes();
+    buildSidebar();
+    renderAllCharts();
+  } else {
+    buildModelCheckboxes();
+  }
+  if(document.getElementById('view-upload').classList.contains('active')){
+    renderFileList();
+  }
+}
+
+document.getElementById('langCa').addEventListener('click', () => setLang('ca'));
+document.getElementById('langEn').addEventListener('click', () => setLang('en'));
+
 // ============================================================
 // Configuracio
 // ============================================================
@@ -505,7 +828,7 @@ async function withViewKey(loaderFn){
     showGate(async (pw) => {
       const data = await loaderFn(pw);
       if(data === null){
-        document.getElementById('gateErr').textContent = 'Contrasenya incorrecta.';
+        document.getElementById('gateErr').textContent = t('gate.wrong');
         document.getElementById('gateErr').style.display = 'block';
         return;
       }
@@ -550,7 +873,7 @@ function populateYearFilter(items){
   const sel = document.getElementById('filterAny');
   const current = sel.value;
   const anys = Array.from(new Set(items.map(it => it.any).filter(Boolean))).sort().reverse();
-  sel.innerHTML = '<option value="">tots els anys</option>' + anys.map(a => `<option value="${a}">${a}</option>`).join('');
+  sel.innerHTML = `<option value="">${t('list.allYears')}</option>` + anys.map(a => `<option value="${a}">${a}</option>`).join('');
   if(anys.includes(current)) sel.value = current;
 }
 
@@ -571,18 +894,18 @@ function applyFilters(){
   const countEl = document.getElementById('filterCount');
 
   countEl.textContent = lastListItems.length
-    ? `${filtered.length} de ${lastListItems.length} incendi${lastListItems.length===1?'':'s'}`
+    ? t('list.count', { filtered: filtered.length, total: lastListItems.length, plural: lastListItems.length===1?'':'s' })
     : '';
 
   if(!lastListItems.length){
-    empty.textContent = 'Encara no hi ha cap incendi registrat.';
+    empty.textContent = t('list.noFiresYet');
     empty.style.display = 'block';
     list.innerHTML = '';
     document.getElementById('fireMap').innerHTML = '';
     return;
   }
   if(!filtered.length){
-    empty.textContent = 'Cap incendi coincideix amb els filtres.';
+    empty.textContent = t('list.noMatch');
     empty.style.display = 'block';
     list.innerHTML = '';
   } else {
@@ -590,7 +913,7 @@ function applyFilters(){
     list.innerHTML = filtered.map(it => `
       <a class="fire-card" href="#/incendi/${encodeURIComponent(it.slug)}">
         <h2>${it.nom}</h2>
-        <span class="meta">${it.n_sondes} sond${it.n_sondes===1?'a':'es'} · actualitzat ${it.actualitzat || '—'}</span>
+        <span class="meta">${t('list.sondCount', { n: it.n_sondes, plural: it.n_sondes===1?(currentLang==='en'?'e':'a'):'es' })} · ${t('list.updated', { date: it.actualitzat || '—' })}</span>
       </a>`).join('');
   }
 
@@ -613,7 +936,7 @@ function renderFireMap(items){
   const mapEl = document.getElementById('fireMap');
   if(fireListMap){ fireListMap.remove(); fireListMap = null; }
   if(!withCoords.length){
-    mapEl.innerHTML = '<p style="padding:1rem;color:var(--text-dim);">Cap incendi amb ubicació coneguda encara.</p>';
+    mapEl.innerHTML = `<p style="padding:1rem;color:var(--text-dim);">${t('list.noCoords')}</p>`;
     return;
   }
   mapEl.innerHTML = '';
@@ -625,7 +948,7 @@ function renderFireMap(items){
 
   withCoords.forEach(it => {
     L.marker([it.lat, it.lon]).addTo(fireListMap)
-      .bindPopup(`<b>${it.nom}</b><br>${it.n_sondes} sond${it.n_sondes===1?'a':'es'}<br><a href="#/incendi/${encodeURIComponent(it.slug)}">obrir →</a>`);
+      .bindPopup(`<b>${it.nom}</b><br>${t('list.sondCount', { n: it.n_sondes, plural: it.n_sondes===1?(currentLang==='en'?'e':'a'):'es' })}<br><a href="#/incendi/${encodeURIComponent(it.slug)}">${t('list.open')}</a>`);
   });
   fireListMap.fitBounds(withCoords.map(it => [it.lat, it.lon]), { padding:[30,30], maxZoom: 11 });
 }
@@ -663,12 +986,15 @@ let modelDataMap = {}; // modelParam -> { label, profile: [...], color } | (abse
 
 const MODEL_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100];
 const MODEL_DEFS = [
-  { key: 'icon_eu', label: 'ICON-EU', color: '#8a8a8a' },
-  { key: 'meteofrance_arome_france', label: 'AROME França', color: '#5b8c5a' },
-  { key: 'ecmwf_ifs025', label: 'ECMWF IFS (0.25°)', color: '#8e5ba0' },
-  { key: 'era5', label: 'ERA5 (CDS)', color: '#ad1457' },
+  { key: 'icon_eu', labelKey: 'model.icon_eu', color: '#8a8a8a' },
+  { key: 'meteofrance_arome_france', labelKey: 'model.arome', color: '#5b8c5a' },
+  { key: 'ecmwf_ifs025', labelKey: 'model.ecmwf', color: '#8e5ba0' },
+  { key: 'era5', labelKey: 'model.era5', color: '#ad1457' },
 ];
-const MODEL_LABELS = Object.fromEntries(MODEL_DEFS.map(m => [m.key, m.label]));
+function modelLabel(key){
+  const def = MODEL_DEFS.find(m => m.key === key);
+  return def ? t(def.labelKey) : key;
+}
 function modelColor(key){
   const def = MODEL_DEFS.find(m => m.key === key);
   return def ? def.color : '#888888';
@@ -682,12 +1008,16 @@ function setModelStatus(key, text){
 function buildModelCheckboxes(){
   const list = document.getElementById('modelCheckList');
   if(!list) return;
+  // conserva l'estat marcat/desmarcat existent (p.ex. en canviar d'idioma,
+  // no volem desactivar els models que ja estaven actius)
+  const prevChecked = {};
+  list.querySelectorAll('input[type=checkbox]').forEach(cb => { prevChecked[cb.dataset.model] = cb.checked; });
   list.innerHTML = MODEL_DEFS.map(m => `
     <div style="margin-bottom:5px;">
       <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-        <input type="checkbox" data-model="${m.key}">
+        <input type="checkbox" data-model="${m.key}" ${prevChecked[m.key] ? 'checked' : ''}>
         <span class="swatch" style="background:${m.color};"></span>
-        <span>${m.label}</span>
+        <span>${t(m.labelKey)}</span>
       </label>
       <div class="model-status" data-model-status="${m.key}" style="margin:2px 0 0 22px; font-size:10px; color:var(--text-dim);"></div>
     </div>`).join('');
@@ -762,7 +1092,7 @@ async function queryModelHost(host, modelParam, ref, targetDt, dateStr){
 
   const res = await fetch(url);
   const data = await res.json();
-  if(data.error){ throw new Error(data.reason || 'Error desconegut'); }
+  if(data.error){ throw new Error(data.reason || t('model.errorReasonUnknown')); }
 
   const times = data.hourly.time; // ISO "YYYY-MM-DDTHH:MM"
   const targetHour = targetDt.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
@@ -775,7 +1105,7 @@ async function queryModelHost(host, modelParam, ref, targetDt, dateStr){
       if(d < bestDiff){ bestDiff = d; idx = i; }
     });
   }
-  if(idx === -1 || idx == null) throw new Error('Sense dades per aquesta hora');
+  if(idx === -1 || idx == null) throw new Error(t('model.noDataForHour'));
 
   const profile = [];
   MODEL_LEVELS.forEach(p => {
@@ -797,7 +1127,7 @@ async function queryModelHost(host, modelParam, ref, targetDt, dateStr){
   });
   profile.sort((a, b) => a.alt_msl_m - b.alt_msl_m);
 
-  if(!profile.length) throw new Error('Cap nivell de pressió amb dades');
+  if(!profile.length) throw new Error(t('model.noLevelWithData'));
   return { profile, targetHour };
 }
 
@@ -805,7 +1135,7 @@ async function loadModelProfile(modelParam){
   const ref = getModelReferenceSonde();
 
   if(!ref || !ref.launch){
-    setModelStatus(modelParam, 'Cap sonda activa amb punt de llançament conegut.');
+    setModelStatus(modelParam, t('model.noActiveSonde'));
     delete modelDataMap[modelParam];
     renderAllCharts();
     return;
@@ -816,16 +1146,16 @@ async function loadModelProfile(modelParam){
     // propia sonda quan es va processar la pujada, perque nomes esta
     // disponible per sondes prou antigues (retard tipic d'uns dies).
     if(ref.era5_profile && ref.era5_profile.length){
-      modelDataMap[modelParam] = { label: 'ERA5 (CDS)', profile: ref.era5_profile, color: modelColor(modelParam) };
+      modelDataMap[modelParam] = { label: modelLabel(modelParam), profile: ref.era5_profile, color: modelColor(modelParam) };
       // era5_target_hour ve del backfill ("YYYY-MM-DDTHH", mateix format que
       // el targetHour dels models en directe) -- si la sonda es va processar
       // abans d'afegir aquest camp, es mostra el text generic anterior.
       setModelStatus(modelParam, ref.era5_target_hour
-        ? `${ref.era5_target_hour.slice(0, 10)} ${ref.era5_target_hour.slice(11)}h UTC (reanàlisi)`
-        : 'ERA5 (CDS) · reanàlisi');
+        ? t('model.era5Reanalysis', { date: ref.era5_target_hour.slice(0, 10), hour: ref.era5_target_hour.slice(11) })
+        : t('model.era5ReanalysisShort'));
     } else {
       delete modelDataMap[modelParam];
-      setModelStatus(modelParam, 'ERA5 no disponible per aquesta sonda (era massa recent quan es va processar, o el CDS no va respondre en aquell moment).');
+      setModelStatus(modelParam, t('model.era5Unavailable'));
     }
     renderAllCharts();
     return;
@@ -833,7 +1163,7 @@ async function loadModelProfile(modelParam){
 
   const launchDt = parseLaunchDateTime(ref);
   if(!launchDt || isNaN(launchDt)){
-    setModelStatus(modelParam, 'No s\'ha pogut determinar la data/hora de llançament.');
+    setModelStatus(modelParam, t('model.noLaunchTime'));
     delete modelDataMap[modelParam];
     renderAllCharts();
     return;
@@ -852,15 +1182,18 @@ async function loadModelProfile(modelParam){
 
   const roundedDt = roundToNearestHour(launchDt);
 
-  setModelStatus(modelParam, 'Carregant...');
+  setModelStatus(modelParam, t('model.loading'));
   let lastErr = null;
   for(const host of hosts){
     try{
       const { profile, targetHour } = await queryModelHost(host, modelParam, ref, roundedDt, dateStr);
-      modelDataMap[modelParam] = { label: MODEL_LABELS[modelParam] || modelParam, profile, color: modelColor(modelParam) };
+      modelDataMap[modelParam] = { label: modelLabel(modelParam), profile, color: modelColor(modelParam) };
       // la data mostrada surt de targetHour (no de dateStr), perque quedi
       // ben etiquetada si l'arrodoniment ha passat al dia seguent
-      setModelStatus(modelParam, `${targetHour.slice(0, 10)} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`);
+      setModelStatus(modelParam, t('model.dateHourUtc', {
+        date: targetHour.slice(0, 10), hour: targetHour.slice(11),
+        source: host.includes('historical') ? t('model.sourceHistorical') : t('model.sourceForecast')
+      }));
       renderAllCharts();
       return;
     } catch(err){
@@ -868,7 +1201,7 @@ async function loadModelProfile(modelParam){
     }
   }
   delete modelDataMap[modelParam];
-  setModelStatus(modelParam, 'Error: ' + (lastErr ? lastErr.message : 'desconegut'));
+  setModelStatus(modelParam, t('model.errorPrefix', { msg: lastErr ? lastErr.message : t('model.errorUnknown') }));
   renderAllCharts();
 }
 
@@ -908,14 +1241,14 @@ async function openIncendi(slug){
   if(!fetched.exists){
     hideGate();
     document.getElementById('incendiContent').innerHTML =
-      '<p>Aquest incendi encara no té dades processades.</p>';
+      `<p>${t('incendi.noData')}</p>`;
     return;
   }
   const data = await withViewKey(async (pw) => tryDecrypt(fetched.ciphertext, pw));
 
   if(!data){
     document.getElementById('incendiContent').innerHTML =
-      '<p>No s\'han pogut carregar les dades d\'aquest incendi.</p>';
+      `<p>${t('incendi.loadError')}</p>`;
     return;
   }
 
@@ -1018,20 +1351,20 @@ function buildSidebar(){
       <input type="checkbox" ${activeIds.has(s.sond_id) ? 'checked' : ''} data-id="${s.sond_id}">
       <span class="swatch" style="background:${color}"></span>
       <span class="sid">${sondaLabel(s.sond_id)}</span>
-      <select class="tp-edit" data-sond-id="${s.sond_id}" title="canvia el tipus">
-        <option value="ambient" ${s.tipus==='ambient'?'selected':''}>ambient</option>
-        <option value="columna" ${s.tipus==='columna'?'selected':''}>columna</option>
+      <select class="tp-edit" data-sond-id="${s.sond_id}" title="${t('skewt.typeChange')}">
+        <option value="ambient" ${s.tipus==='ambient'?'selected':''}>${t('sonda.tipeAmbient')}</option>
+        <option value="columna" ${s.tipus==='columna'?'selected':''}>${t('sonda.tipeColumna')}</option>
       </select>
       <div class="sonda-menu" style="position:relative; margin-left:auto; flex-shrink:0;">
-        <button type="button" class="sonda-menu-btn" data-sond-id="${s.sond_id}" title="opcions" style="background:none; border:none; cursor:pointer; color:var(--text-dim); font-size:15px; line-height:1; padding:3px 7px; border-radius:3px;">⋮</button>
+        <button type="button" class="sonda-menu-btn" data-sond-id="${s.sond_id}" title="${t('sonda.options')}" style="background:none; border:none; cursor:pointer; color:var(--text-dim); font-size:15px; line-height:1; padding:3px 7px; border-radius:3px;">⋮</button>
         <div class="sonda-menu-list" style="display:none; position:absolute; right:0; top:100%; background:#fff; border:1px solid var(--panel-border); border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,.15); z-index:20; min-width:130px; overflow:hidden;">
-          <a href="#" class="sonda-delete" data-sond-id="${s.sond_id}" style="display:block; padding:7px 10px; color:var(--red); text-decoration:none; font-family:var(--font-mono); font-size:11px; white-space:nowrap;">🗑 Elimina sonda</a>
+          <a href="#" class="sonda-delete" data-sond-id="${s.sond_id}" style="display:block; padding:7px 10px; color:var(--red); text-decoration:none; font-family:var(--font-mono); font-size:11px; white-space:nowrap;">${t('sonda.delete')}</a>
         </div>
       </div>
     </label>
     <div class="sonda-meta-row" style="display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin:-4px 0 8px 22px;">
       <span>${s.launch_time_utc || '—'} UTC</span>
-      <span class="elev-edit-wrap" style="display:flex; align-items:center; gap:3px;" title="alçada de llançament (m ASL) — corregeix-la si el GPS/altímetre ha fet un mal fix inicial">
+      <span class="elev-edit-wrap" style="display:flex; align-items:center; gap:3px;" title="${t('sonda.elevTitle')}">
         <input type="number" class="elev-edit" data-sond-id="${s.sond_id}" value="${elev != null ? elev : ''}" style="width:58px; padding:1px 3px; border:1px solid var(--panel-border); border-radius:3px; font-family:var(--font-mono); font-size:10.5px;">m
       </span>
     </div>`;
@@ -1041,7 +1374,7 @@ function buildSidebar(){
       if(cb.checked){
         if(activeIds.size >= MAX_ACTIVE_SONDES){
           cb.checked = false;
-          alert(`Com a màxim es poden mostrar ${MAX_ACTIVE_SONDES} sondes alhora als gràfics. Desmarca'n alguna abans d'afegir-ne una altra.`);
+          alert(t('sonda.maxActive', { max: MAX_ACTIVE_SONDES }));
           return;
         }
         activeIds.add(cb.dataset.id);
@@ -1081,12 +1414,18 @@ function buildSidebar(){
   populateSkewTSelectors();
 }
 
+function sondaTipeDisplay(tipus){
+  if(tipus === 'ambient') return t('sonda.tipeAmbient');
+  if(tipus === 'columna') return t('sonda.tipeColumna');
+  return tipus || '—';
+}
+
 function populateSkewTSelectors(){
-  const opts = INCENDI.sondes.map(s => `<option value="${s.sond_id}">${s.tipus} — ${sondaLabel(s.sond_id)}</option>`).join('');
+  const opts = INCENDI.sondes.map(s => `<option value="${s.sond_id}">${sondaTipeDisplay(s.tipus)} — ${sondaLabel(s.sond_id)}</option>`).join('');
   const sel1 = document.getElementById('skewtSonda1');
   const sel2 = document.getElementById('skewtSonda2');
   sel1.innerHTML = opts;
-  sel2.innerHTML = '<option value="">(cap)</option>' + opts;
+  sel2.innerHTML = `<option value="">${t('skewt.none')}</option>` + opts;
 
   // per defecte: primera sonda, i la primera "columna" si n'hi ha (o la
   // segona sonda si no), perque la comparacio mes habitual surti d'entrada
@@ -1101,7 +1440,7 @@ async function waitForIncendiUpdate(slug, beforeCipher){
   const statusEl = document.getElementById('editStatus');
   const maxAttempts = 20; // fins ~1 minut
   for(let i = 0; i < maxAttempts; i++){
-    statusEl.textContent = `Actualitzant... (${i+1}/${maxAttempts})`;
+    statusEl.textContent = t('status.updating', { i: i+1, max: maxAttempts });
     await new Promise(r => setTimeout(r, 3000));
     const fetched = await fetchEncrypted(`data/incendis/${slug}.json.enc`);
     const current = fetched.exists ? fetched.ciphertext : null;
@@ -1110,7 +1449,7 @@ async function waitForIncendiUpdate(slug, beforeCipher){
       return true;
     }
   }
-  statusEl.textContent = 'Encara no s\'ha publicat el canvi — prova de tornar-hi d\'aquí una estona.';
+  statusEl.textContent = t('status.notPublishedYet');
   return false;
 }
 
@@ -1120,7 +1459,7 @@ async function editSondaTipus(sondId, newTipus, selectEl){
 
   let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
   if(!password){
-    password = prompt('Contrasenya de pujada (cal per editar sondes):') || '';
+    password = prompt(t('status.uploadPwPrompt')) || '';
     if(!password) { selectEl.value = previousTipus; return; }
   }
 
@@ -1135,14 +1474,14 @@ async function editSondaTipus(sondId, newTipus, selectEl){
       body: JSON.stringify({ password, action: 'edit_tipus', slug: currentSlug, sondId, newTipus })
     });
     const data = await res.json().catch(() => ({}));
-    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+    if(!res.ok){ throw new Error(data.error || t('status.serverError', { status: res.status })); }
     // esperem que Github Pages publiqui de veritat el commit nou abans de
     // tornar a carregar, si no la primera consulta encara pot rebre el
     // fitxer vell tot i haver desat el canvi correctament
     await waitForIncendiUpdate(currentSlug, beforeCipher);
     await openIncendi(currentSlug);
   } catch(err){
-    alert('No s\'ha pogut canviar el tipus: ' + err.message);
+    alert(t('status.typeChangeFailed', { msg: err.message }));
     selectEl.value = previousTipus;
     selectEl.disabled = false;
   }
@@ -1151,16 +1490,16 @@ async function editSondaTipus(sondId, newTipus, selectEl){
 async function deleteSonda(sondId){
   const sonda = INCENDI.sondes.find(s => s.sond_id === sondId);
   if(!sonda) return;
-  if(!confirm(`Elimina la sonda ${sondaLabel(sondId)}? Aquesta acció no es pot desfer.`)) return;
+  if(!confirm(t('status.confirmDelete', { label: sondaLabel(sondId) }))) return;
 
   let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
   if(!password){
-    password = prompt('Contrasenya de pujada (cal per eliminar sondes):') || '';
+    password = prompt(t('status.uploadPwPromptDelete')) || '';
     if(!password) return;
   }
 
   const statusEl = document.getElementById('editStatus');
-  statusEl.textContent = `Eliminant ${sondaLabel(sondId)}...`;
+  statusEl.textContent = t('status.deleting', { label: sondaLabel(sondId) });
   try{
     const beforeFetched = await fetchEncrypted(`data/incendis/${currentSlug}.json.enc`);
     const beforeCipher = beforeFetched.exists ? beforeFetched.ciphertext : null;
@@ -1171,12 +1510,12 @@ async function deleteSonda(sondId){
       body: JSON.stringify({ password, action: 'delete_sonda', slug: currentSlug, sondId })
     });
     const data = await res.json().catch(() => ({}));
-    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+    if(!res.ok){ throw new Error(data.error || t('status.serverError', { status: res.status })); }
     await waitForIncendiUpdate(currentSlug, beforeCipher);
     await openIncendi(currentSlug);
   } catch(err){
     statusEl.textContent = '';
-    alert('No s\'ha pogut eliminar la sonda: ' + err.message);
+    alert(t('status.deleteFailed', { msg: err.message }));
   }
 }
 
@@ -1193,7 +1532,7 @@ async function editSondaElevation(sondId, newValueStr, inputEl){
 
   let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
   if(!password){
-    password = prompt('Contrasenya de pujada (cal per editar sondes):') || '';
+    password = prompt(t('status.uploadPwPrompt')) || '';
     if(!password) { inputEl.value = previousElev != null ? Math.round(previousElev) : ''; return; }
   }
 
@@ -1208,14 +1547,14 @@ async function editSondaElevation(sondId, newValueStr, inputEl){
       body: JSON.stringify({ password, action: 'edit_elevation', slug: currentSlug, sondId, offset })
     });
     const data = await res.json().catch(() => ({}));
-    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+    if(!res.ok){ throw new Error(data.error || t('status.serverError', { status: res.status })); }
     // esperem que Github Pages publiqui de veritat el commit nou abans de
     // tornar a carregar (l'offset afecta tot el perfil, el track del mapa
     // i els eixos)
     await waitForIncendiUpdate(currentSlug, beforeCipher);
     await openIncendi(currentSlug);
   } catch(err){
-    alert('No s\'ha pogut corregir l\'alçada: ' + err.message);
+    alert(t('status.elevFailed', { msg: err.message }));
     inputEl.value = previousElev != null ? Math.round(previousElev) : '';
     inputEl.disabled = false;
   }
@@ -1439,7 +1778,7 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraT
       layout: { padding: { top: extraTopPadding || 0 } },
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
-        y: { type:'linear', min:yMin, max:yMax, title:{display: canvasId==='chartTheta', text:'Alçada ASL (m)', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
+        y: { type:'linear', min:yMin, max:yMax, title:{display: canvasId==='chartTheta', text:t('chart.heightAxis'), color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins: { legend: { display:false }, tooltip: tooltipCallbacks(unit, decimals) }
     }
@@ -2039,7 +2378,7 @@ function renderSkewT(){
     ctx.fillStyle = color;
     ctx.fillRect(lx, ly - 8, 10, 10);
     ctx.fillStyle = '#444'; ctx.textAlign = 'left';
-    const label = `${s.tipus} — ${sondaLabel(s.sond_id)}`;
+    const label = t('skewt.legendLabel', { tipus: sondaTipeDisplay(s.tipus), label: sondaLabel(s.sond_id) });
     ctx.fillText(label, lx + 14, ly);
     ly += 14;
   });
@@ -2171,11 +2510,11 @@ const RH_BOUNDS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const RH_COLORS = ['red', 'orange', 'yellow', 'lightgreen', 'limegreen', 'forestgreen', 'darkslategrey', 'cornflowerblue', 'blue', 'darkblue'];
 
 const DRIFT_COLOR_FIELDS = {
-  alt:  { profileField: null,            label: 'alçada',              unit: 'm',   decimals: 0,
+  alt:  { profileField: null,            labelKey: 'drift.fieldAlt',  unit: 'm',   decimals: 0,
           color: (v, minV, maxV) => valueColorContinuous(v, minV, maxV) },
-  rise: { profileField: 'rise_speed_ms', label: "velocitat d'ascens", unit: 'm/s', decimals: 1,
+  rise: { profileField: 'rise_speed_ms', labelKey: 'drift.fieldRise', unit: 'm/s', decimals: 1,
           color: (v) => valueColorBinned(v, RISE_BOUNDS, RISE_COLORS), bounds: RISE_BOUNDS, colors: RISE_COLORS },
-  rh:   { profileField: 'rh_pct',        label: 'humitat relativa',   unit: '%',   decimals: 0,
+  rh:   { profileField: 'rh_pct',        labelKey: 'drift.fieldRh',   unit: '%',   decimals: 0,
           color: (v) => valueColorBinned(v, RH_BOUNDS, RH_COLORS), bounds: RH_BOUNDS, colors: RH_COLORS }
 };
 
@@ -2212,7 +2551,7 @@ function renderDrift(){
   sondes.forEach(({s}) => (s.flight_path_3d || []).forEach(([lon,lat]) => allPts.push([lat,lon])));
 
   if(!allPts.length){
-    document.getElementById('driftBox').innerHTML = '<p style="padding:1rem;color:var(--text-dim);">Sense track disponible per a les sondes actives.</p>';
+    document.getElementById('driftBox').innerHTML = `<p style="padding:1rem;color:var(--text-dim);">${t('drift.noTrack')}</p>`;
     return;
   }
 
@@ -2264,8 +2603,8 @@ function renderDrift(){
     ).join('');
   }
   document.getElementById('driftLegendNote').innerHTML = colorBy === 'alt'
-    ? `(MSL) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>`
-    : `(${meta.label}) · <span style="border-bottom:2px solid #999;">pujada</span> / <span style="border-bottom:2px dashed #999;">baixada</span>`;
+    ? t('drift.legendMsl')
+    : t('drift.legendField', { label: t(meta.labelKey) });
 
   sondes.forEach(({s}) => {
     const track = s.flight_path_3d;
@@ -2292,17 +2631,17 @@ function renderDrift(){
     if(s.launch){
       L.circleMarker([s.launch.lat, s.launch.lon], {
         radius:6, color:'#fff', weight:1.5, fillColor:'#2b2b2b', fillOpacity:1
-      }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>llançament · ${s.launch_time_utc || '—'} UTC`);
+      }).addTo(driftMap).bindPopup(t('drift.popupLaunch', { id: s.sond_id, time: s.launch_time_utc || '—' }));
     }
     if(s.peak){
       L.circleMarker([s.peak.lat, s.peak.lon], {
         radius:6, color:'#fff', weight:1.5, fillColor:'#C8102E', fillOpacity:1
-      }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>pic · ${Math.round(s.peak_agl_m || 0)} m AGL`);
+      }).addTo(driftMap).bindPopup(t('drift.popupPeak', { id: s.sond_id, alt: Math.round(s.peak_agl_m || 0) }));
     }
     if(s.landing_prediction){
       L.circleMarker([s.landing_prediction.lat, s.landing_prediction.lon], {
         radius:4, color:'#999', weight:1, fillColor:'#999', fillOpacity:0.5, dashArray:'2,2'
-      }).addTo(driftMap).bindPopup(`<b>${s.sond_id}</b><br>predicció d'aterratge`);
+      }).addTo(driftMap).bindPopup(t('drift.popupLanding', { id: s.sond_id }));
     }
   });
 
@@ -2322,7 +2661,7 @@ function kmlToGeoJSON(kmlText){
   // TimeSpan traspassats a "properties" (aixi la deteccio d'hora de les
   // isocrones funciona igual que amb GeoJSON nadiu).
   const dom = new DOMParser().parseFromString(kmlText, 'text/xml');
-  if(dom.getElementsByTagName('parsererror').length) throw new Error('KML mal format');
+  if(dom.getElementsByTagName('parsererror').length) throw new Error(t('status.kmlMalformed'));
 
   const parseCoords = (text) => text.trim().split(/\s+/).filter(Boolean).map(tuple => {
     const parts = tuple.split(',').map(Number);
@@ -2419,7 +2758,7 @@ function renderPerimeter(geojson, map){
     onEachFeature: (feature, layer) => {
       const idx = features.indexOf(feature);
       const label = timeKey ? feature.properties[timeKey] : `#${idx + 1}`;
-      layer.bindPopup(`Isocrona ${label}`);
+      layer.bindPopup(t('drift.isochrone', { label }));
     }
   }).addTo(map);
 }
@@ -2440,28 +2779,28 @@ document.getElementById('perimeterFile').addEventListener('change', async (e) =>
     if(isKmz){
       const zip = await JSZip.loadAsync(file);
       const kmlEntry = Object.values(zip.files).find(f => !f.dir && f.name.toLowerCase().endsWith('.kml'));
-      if(!kmlEntry) throw new Error('el .kmz no conté cap fitxer .kml a dins');
+      if(!kmlEntry) throw new Error(t('status.kmzNoKml'));
       kmlText = await kmlEntry.async('string');
     } else if(isKml){
       kmlText = await file.text();
     }
     geojson = (isKml || isKmz) ? kmlToGeoJSON(kmlText) : JSON.parse(await file.text());
   } catch(err){
-    statusEl.textContent = (isKml || isKmz) ? ('KML/KMZ no vàlid: ' + err.message) : 'Fitxer no és JSON vàlid.';
+    statusEl.textContent = (isKml || isKmz) ? t('status.kmlInvalid', { msg: err.message }) : t('status.fileNotJson');
     return;
   }
   if((isKml || isKmz) && (!geojson.features || !geojson.features.length)){
-    statusEl.textContent = 'No s\'ha trobat cap geometria (Polygon/LineString/Point) al KML.';
+    statusEl.textContent = t('status.noGeometry');
     return;
   }
 
   let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
   if(!password){
-    password = prompt('Contrasenya de pujada (cal per afegir el perímetre):') || '';
+    password = prompt(t('status.uploadPwPromptPerimeter')) || '';
     if(!password) return;
   }
 
-  statusEl.textContent = 'Pujant...';
+  statusEl.textContent = t('status.uploading');
   try{
     const beforeFetched = await fetchEncrypted(`data/incendis/${currentSlug}.json.enc`);
     const beforeCipher = beforeFetched.exists ? beforeFetched.ciphertext : null;
@@ -2472,14 +2811,14 @@ document.getElementById('perimeterFile').addEventListener('change', async (e) =>
       body: JSON.stringify({ password, action: 'upload_perimeter', slug: currentSlug, geojson })
     });
     const data = await res.json().catch(() => ({}));
-    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+    if(!res.ok){ throw new Error(data.error || t('status.serverError', { status: res.status })); }
 
-    statusEl.textContent = 'Actualitzant...';
+    statusEl.textContent = t('status.updatingDots');
     await waitForIncendiUpdate(currentSlug, beforeCipher);
     statusEl.textContent = '';
     await openIncendi(currentSlug);
   } catch(err){
-    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.textContent = t('status.uploadError', { msg: err.message });
   }
 });
 
@@ -2499,7 +2838,7 @@ function downloadChartsImage(){
 
   ctx.fillStyle = '#2b2b2b';
   ctx.font = '16px sans-serif';
-  const title = `Incendi ${INCENDI.incendi || ''} — perfil vertical`;
+  const title = t('chart.downloadTitleProfile', { name: INCENDI.incendi || '' });
   ctx.fillText(title, 6, 22);
 
   let x = 0;
@@ -2515,7 +2854,7 @@ function downloadChartsImage(){
   ctx.font = '12px sans-serif';
 
   const items = activeSondes().map(({s, color}) => ({
-    color, label: `${s.tipus || '—'} — ${sondaLabel(s.sond_id)}`
+    color, label: t('skewt.legendLabel', { tipus: sondaTipeDisplay(s.tipus), label: sondaLabel(s.sond_id) })
   }));
   const widths = items.map(it => swatchSize + 6 + ctx.measureText(it.label).width);
   const totalW = widths.reduce((a, b) => a + b, 0) + itemGap * (items.length - 1);
@@ -2552,7 +2891,7 @@ function downloadSkewTImage(){
 
   ctx.fillStyle = '#2b2b2b';
   ctx.font = '16px sans-serif';
-  const title = `Incendi ${INCENDI.incendi || ''} — Skew-T`;
+  const title = t('chart.downloadTitleSkewt', { name: INCENDI.incendi || '' });
   ctx.fillText(title, 6, 22);
 
   ctx.drawImage(canvas, 0, topMargin);
@@ -2567,7 +2906,7 @@ function downloadSkewTImage(){
   const sel2 = document.getElementById('skewtSonda2').value;
   const items = [sel1, sel2].filter(Boolean).map(id => {
     const s = INCENDI.sondes.find(x => x.sond_id === id);
-    return { color: allSondaColors[id] || '#333', label: s ? `${s.tipus || '—'} — ${sondaLabel(id)}` : id };
+    return { color: allSondaColors[id] || '#333', label: s ? t('skewt.legendLabel', { tipus: sondaTipeDisplay(s.tipus), label: sondaLabel(id) }) : id };
   });
   const widths = items.map(it => swatchSize + 6 + ctx.measureText(it.label).width);
   const totalW = widths.reduce((a, b) => a + b, 0) + itemGap * (items.length - 1);
@@ -2629,11 +2968,11 @@ function renderAllCharts(){
   // mateixa alçada útil. El guard othersBuilt evita repetir-ho en
   // redimensionaments posteriors (afterLayout es torna a cridar llavors).
   let othersBuilt = false;
-  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', 'θᵥ (K)', 'theta', 'K', 1, 0, (chart) => {
+  charts.theta = makeMultiChart('chartTheta', 'theta_v_k', t('chart.thetaAxis'), 'theta', 'K', 1, 0, (chart) => {
     if(othersBuilt) return;
     othersBuilt = true;
     const topPad = chart.chartArea.top;
-    charts.rh = makeMultiChart('chartRh', 'rh_pct', 'HR (%)', 'rh', '%', 0, topPad);
+    charts.rh = makeMultiChart('chartRh', 'rh_pct', t('chart.rhAxis'), 'rh', '%', 0, topPad);
     charts.wind = makeWindChart(topPad);
     charts.rise = makeMultiChart('chartRise', 'rise_speed_ms', 'm/s', 'rise', 'm/s', 1, topPad);
   });
@@ -2650,7 +2989,7 @@ uploadPwInput.value = localStorage.getItem(UPLOAD_PW_KEY) || '';
 
 document.getElementById('saveUploadPw').addEventListener('click', () => {
   localStorage.setItem(UPLOAD_PW_KEY, uploadPwInput.value.trim());
-  setUploadStatus('Contrasenya desada en aquest navegador.', 'ok');
+  setUploadStatus(t('upload.pwSaved'), 'ok');
 });
 
 function setUploadStatus(msg, kind){
@@ -2682,15 +3021,15 @@ function renderFileList(){
     <div class="file-row">
       <span class="fname" title="${f.file.name}">${f.file.name}</span>
       <select data-idx="${i}" class="tipus-select" ${f.status==='ok' ? 'disabled' : ''}>
-        <option value="ambient" ${f.tipus==='ambient'?'selected':''}>ambient</option>
-        <option value="columna" ${f.tipus==='columna'?'selected':''}>columna</option>
+        <option value="ambient" ${f.tipus==='ambient'?'selected':''}>${t('sonda.tipeAmbient')}</option>
+        <option value="columna" ${f.tipus==='columna'?'selected':''}>${t('sonda.tipeColumna')}</option>
       </select>
       <span class="fstatus ${f.status}" title="${f.errorMsg || ''}">${
-        f.status==='pending' ? 'pendent' :
-        f.status==='uploading' ? 'pujant...' :
-        f.status==='ok' ? '✓ fet' : '✗ ' + (f.errorMsg || 'error')
+        f.status==='pending' ? t('upload.statusPending') :
+        f.status==='uploading' ? t('upload.statusUploading') :
+        f.status==='ok' ? t('upload.statusOk') : '✗ ' + (f.errorMsg || t('upload.errorGeneric'))
       }</span>
-      <button type="button" class="removeFileBtn" data-idx="${i}" title="Treu de la llista"
+      <button type="button" class="removeFileBtn" data-idx="${i}" title="${t('upload.removeFile')}"
         style="background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:0 2px;">✕</button>
     </div>`).join('');
   el.querySelectorAll('.tipus-select').forEach(sel => {
@@ -2738,7 +3077,7 @@ async function uploadBatch(entries, incendiNom, password){
     body: JSON.stringify({ password, incendi: incendiNom, files: filesPayload })
   });
   const data = await res.json().catch(() => ({}));
-  if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+  if(!res.ok){ throw new Error(data.error || t('status.serverError', { status: res.status })); }
 
   entries.forEach((e, i) => {
     e.status = 'ok';
@@ -2758,7 +3097,7 @@ async function uploadOneFile(entry, incendiNom, password){
       body: JSON.stringify({ password, incendi: incendiNom, files: [{ filename: entry.file.name, tipus: entry.tipus, zipBase64 }] })
     });
     const data = await res.json().catch(() => ({}));
-    if(!res.ok){ throw new Error(data.error || `Error del servidor (${res.status})`); }
+    if(!res.ok){ throw new Error(data.error || t('status.serverError', { status: res.status })); }
     entry.status = 'ok';
     entry.sondId = data.results && data.results[0] ? data.results[0].sondId : null;
   } catch(err){
@@ -2774,14 +3113,14 @@ async function waitForProcessingAndJump(slug, beforeCipher){
   let stableCount = 0;
   for(let i = 0; i < maxAttempts; i++){
     await new Promise(r => setTimeout(r, 5000));
-    setUploadStatus(`Processant dades... (${i+1}/${maxAttempts})`, 'wait');
+    setUploadStatus(t('upload.processing', { i: i+1, max: maxAttempts }), 'wait');
     const fetched = await fetchEncrypted(`data/incendis/${slug}.json.enc`);
     const current = fetched.exists ? fetched.ciphertext : null;
     if(current && current !== beforeCipher){
       if(current === lastCipher){
         stableCount++;
         if(stableCount >= 1){
-          setUploadStatus('Fet! Obrint l\'incendi...', 'ok');
+          setUploadStatus(t('upload.done'), 'ok');
           location.hash = '#/incendi/' + slug;
           return;
         }
@@ -2792,23 +3131,22 @@ async function waitForProcessingAndJump(slug, beforeCipher){
     }
   }
   setUploadStatus(
-    'Encara no s\'ha completat el processament (pot trigar una mica més amb moltes sondes de cop). ' +
-    `Comprova-ho a https://github.com/${OWNER}/${REPO}/actions, o `,
+    t('upload.notDoneYet', { url: `https://github.com/${OWNER}/${REPO}/actions` }),
     'wait'
   );
   const link = document.createElement('a');
   link.href = '#/incendi/' + slug;
-  link.textContent = 'ves a l\'incendi ara mateix';
+  link.textContent = t('upload.goToFireNow');
   document.getElementById('uploadStatus').appendChild(link);
 }
 
 async function runUpload(entriesToRun){
   const password = uploadPwInput.value.trim();
   const incendiNom = document.getElementById('incendiInput').value.trim();
-  if(!password){ setUploadStatus('Cal la contrasenya de pujada (a dalt).', 'ko'); return; }
-  if(!pendingFiles.length){ setUploadStatus('Selecciona almenys un ZIP.', 'ko'); return; }
-  if(!incendiNom){ setUploadStatus('Cal el nom de l\'incendi.', 'ko'); return; }
-  if(!entriesToRun.length){ setUploadStatus('No hi ha res pendent de pujar.', 'ko'); return; }
+  if(!password){ setUploadStatus(t('upload.needPassword'), 'ko'); return; }
+  if(!pendingFiles.length){ setUploadStatus(t('upload.needZip'), 'ko'); return; }
+  if(!incendiNom){ setUploadStatus(t('upload.needFireName'), 'ko'); return; }
+  if(!entriesToRun.length){ setUploadStatus(t('upload.nothingPending'), 'ko'); return; }
 
   const submitBtn = document.getElementById('submitBtn');
   const retryBtn = document.getElementById('retryBtn');
@@ -2824,14 +3162,14 @@ async function runUpload(entriesToRun){
   for(const entry of entriesToRun){ entry.errorMsg = null; }
 
   try{
-    setUploadStatus('Pujant fitxers...', 'wait');
+    setUploadStatus(t('upload.uploadingFiles'), 'wait');
     await uploadBatch(entriesToRun, incendiNom, password);
   } catch(batchErr){
     // La tanda sencera ha fallat (tot o res, per ser un commit atomic) ->
     // cau a pujar-los d'un en un, per poder salvar els que sí que funcionin.
-    setUploadStatus(`La pujada conjunta ha fallat (${batchErr.message}). Provant d'un en un...`, 'wait');
+    setUploadStatus(t('upload.batchFailed', { msg: batchErr.message }), 'wait');
     for(const entry of entriesToRun){
-      setUploadStatus(`Pujant ${entry.file.name}...`, 'wait');
+      setUploadStatus(t('upload.uploadingFile', { name: entry.file.name }), 'wait');
       await uploadOneFile(entry, incendiNom, password);
     }
   }
@@ -2843,12 +3181,12 @@ async function runUpload(entriesToRun){
   retryBtn.style.display = anyError ? 'inline-block' : 'none';
 
   if(!anyOk){
-    setUploadStatus('Cap fitxer s\'ha pogut pujar. Revisa els errors de la llista i reintenta.', 'ko');
+    setUploadStatus(t('upload.noneUploaded'), 'ko');
     return;
   }
 
   if(anyError){
-    setUploadStatus(`${pendingFiles.filter(f=>f.status==='ok').length} pujades, però alguna ha fallat — reintenta-la abans de continuar si cal.`, 'wait');
+    setUploadStatus(t('upload.someFailed', { n: pendingFiles.filter(f=>f.status==='ok').length }), 'wait');
   }
 
   await waitForProcessingAndJump(slug, beforeCipher);
@@ -2864,6 +3202,7 @@ document.getElementById('retryBtn').addEventListener('click', async () => {
 });
 
 // ============================================================
+applyStaticI18n();
 router();
 </script>
 </body>
