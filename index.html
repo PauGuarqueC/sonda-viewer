@@ -1201,13 +1201,19 @@ async function editSondaElevation(sondId, newValueStr, inputEl){
 }
 
 function activeSondes(){
+  // El color de cada sonda es fixa un sol cop a buildSidebar() (allSondaColors),
+  // segons la seva posicio entre TOTES les sondes de l'incendi -- no es pot
+  // recalcular aqui nomes entre les actives, perque llavors dues sondes
+  // qualssevol que se seleccionin sempre sortirien amb els dos primers
+  // colors (el de la 1a i la 2a posicio), en lloc del color que els
+  // correspon i que ja es mostra a la llegenda del lateral i a l'Skew-T.
   const typeCount = {};
   return INCENDI.sondes
     .filter(s => activeIds.has(s.sond_id))
     .map(s => {
       const idx = typeCount[s.tipus] = (typeCount[s.tipus] || 0);
       typeCount[s.tipus]++;
-      return { s, color: tipusColor(s.tipus, idx), dash: DASH[idx % DASH.length] };
+      return { s, color: allSondaColors[s.sond_id] || tipusColor(s.tipus, idx), dash: DASH[idx % DASH.length] };
     });
 }
 
