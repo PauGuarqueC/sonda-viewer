@@ -733,14 +733,31 @@ function parseLaunchDateTime(s){
   return new Date(`${dateMatch[0]}T${hh}:${mm}:00Z`);
 }
 
-async function queryModelHost(host, modelParam, ref, launchDt, dateStr){
+function roundToNearestHour(dt){
+  // 13:20 -> 13:00, 13:50 -> 14:00 (no simplement truncar cap avall com
+  // abans). Fet amb un objecte Date perque un arrodoniment cap amunt a
+  // les 23:xx passi correctament al dia seguent a les 00:00.
+  const rounded = new Date(dt.getTime());
+  rounded.setUTCMinutes(0, 0, 0);
+  if(dt.getUTCMinutes() >= 30) rounded.setTime(rounded.getTime() + 3600000);
+  return rounded;
+}
+
+async function queryModelHost(host, modelParam, ref, targetDt, dateStr){
   const vars = [];
   MODEL_LEVELS.forEach(p => {
     vars.push(`temperature_${p}hPa`, `relative_humidity_${p}hPa`, `wind_speed_${p}hPa`, `wind_direction_${p}hPa`, `geopotential_height_${p}hPa`);
   });
 
+  // targetDt (l'hora arrodonida) pot caure l'endema de dateStr (llançament
+  // a les 23:xx arrodonit a les 00:00) -- s'amplia el rang demanat perque
+  // aquesta hora hi sigui sempre inclosa.
+  const targetDateStr = targetDt.toISOString().slice(0, 10);
+  const reqStart = dateStr <= targetDateStr ? dateStr : targetDateStr;
+  const reqEnd = dateStr <= targetDateStr ? targetDateStr : dateStr;
+
   const url = `${host}/v1/forecast?latitude=${ref.launch.lat}&longitude=${ref.launch.lon}`
-    + `&hourly=${vars.join(',')}&start_date=${dateStr}&end_date=${dateStr}`
+    + `&hourly=${vars.join(',')}&start_date=${reqStart}&end_date=${reqEnd}`
     + `&models=${modelParam}&wind_speed_unit=ms&timezone=UTC`;
 
   const res = await fetch(url);
@@ -748,13 +765,13 @@ async function queryModelHost(host, modelParam, ref, launchDt, dateStr){
   if(data.error){ throw new Error(data.reason || 'Error desconegut'); }
 
   const times = data.hourly.time; // ISO "YYYY-MM-DDTHH:MM"
-  const targetHour = launchDt.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+  const targetHour = targetDt.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
   let idx = times.findIndex(t => t.slice(0, 13) === targetHour);
   if(idx === -1){
     // agafa l'hora mes propera si no hi ha coincidencia exacta
     let bestDiff = Infinity;
     times.forEach((t, i) => {
-      const d = Math.abs(new Date(t + ':00Z') - launchDt);
+      const d = Math.abs(new Date(t + ':00Z') - targetDt);
       if(d < bestDiff){ bestDiff = d; idx = i; }
     });
   }
@@ -833,13 +850,17 @@ async function loadModelProfile(modelParam){
     ? ['https://api.open-meteo.com', 'https://historical-forecast-api.open-meteo.com']
     : ['https://historical-forecast-api.open-meteo.com', 'https://api.open-meteo.com'];
 
+  const roundedDt = roundToNearestHour(launchDt);
+
   setModelStatus(modelParam, 'Carregant...');
   let lastErr = null;
   for(const host of hosts){
     try{
-      const { profile, targetHour } = await queryModelHost(host, modelParam, ref, launchDt, dateStr);
+      const { profile, targetHour } = await queryModelHost(host, modelParam, ref, roundedDt, dateStr);
       modelDataMap[modelParam] = { label: MODEL_LABELS[modelParam] || modelParam, profile, color: modelColor(modelParam) };
-      setModelStatus(modelParam, `${dateStr} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`);
+      // la data mostrada surt de targetHour (no de dateStr), perque quedi
+      // ben etiquetada si l'arrodoniment ha passat al dia seguent
+      setModelStatus(modelParam, `${targetHour.slice(0, 10)} ${targetHour.slice(11)}h UTC (${host.includes('historical') ? 'arxiu' : 'previsió'})`);
       renderAllCharts();
       return;
     } catch(err){
