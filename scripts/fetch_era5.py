@@ -38,8 +38,13 @@ def fetch_era5_profile(lat, lon, date_str, hour):
     date_str: "YYYY-MM-DD". hour: enter 0-23 (ERA5 es horari, s'agafa l'hora
     sencera mes propera al llançament).
 
-    Torna una llista de punts {alt_msl_m, theta_v_k, rh_pct, wind_speed_ms,
-    wind_dir_deg}, ordenada per alcada creixent. Aixeca una excepcio si el
+    Torna una llista de punts {alt_msl_m, pressure_mb, temp_c, theta_v_k,
+    rh_pct, wind_speed_ms, wind_dir_deg}, ordenada per alcada creixent.
+    pressure_mb i temp_c calen perque el visor dibuixi aquest perfil a
+    l'Skew-T (les corbes de T/Td i les barbes de vent s'hi indexen per
+    pressio, no per alcada); sense aquests dos camps el perfil es mostra
+    igualment als 4 grafics de dalt (nomes fan servir theta_v_k/rh_pct/
+    alt_msl_m) pero queda buit a l'Skew-T.
     CDS no respon be (llicencia no acceptada, token invalid, etc.) -- es
     responsabilitat de qui ho crida decidir si aixo ha de fer fallar tot el
     proces o nomes ballar-se aquest perfil concret.
@@ -94,6 +99,8 @@ def fetch_era5_profile(lat, lon, date_str, hour):
 
             profile.append({
                 "alt_msl_m": alt_msl_m,
+                "pressure_mb": float(p),
+                "temp_c": temp_c,
                 "theta_v_k": _theta_v(temp_c, rh, p),
                 "rh_pct": rh,
                 "wind_speed_ms": speed,
