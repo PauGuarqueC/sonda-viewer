@@ -913,7 +913,7 @@ function applyFilters(){
     list.innerHTML = filtered.map(it => `
       <a class="fire-card" href="#/incendi/${encodeURIComponent(it.slug)}">
         <h2>${it.nom}</h2>
-        <span class="meta">${t('list.sondCount', { n: it.n_sondes, plural: it.n_sondes===1?(currentLang==='en'?'e':'a'):'es' })} · ${t('list.updated', { date: it.actualitzat || '—' })}</span>
+        <span class="meta">${t('list.sondCount', { n: it.n_sondes, plural: it.n_sondes===1?(currentLang==='en'?'':'a'):(currentLang==='en'?'s':'es') })} · ${t('list.updated', { date: it.actualitzat || '—' })}</span>
       </a>`).join('');
   }
 
@@ -948,7 +948,7 @@ function renderFireMap(items){
 
   withCoords.forEach(it => {
     L.marker([it.lat, it.lon]).addTo(fireListMap)
-      .bindPopup(`<b>${it.nom}</b><br>${t('list.sondCount', { n: it.n_sondes, plural: it.n_sondes===1?(currentLang==='en'?'e':'a'):'es' })}<br><a href="#/incendi/${encodeURIComponent(it.slug)}">${t('list.open')}</a>`);
+      .bindPopup(`<b>${it.nom}</b><br>${t('list.sondCount', { n: it.n_sondes, plural: it.n_sondes===1?(currentLang==='en'?'':'a'):(currentLang==='en'?'s':'es') })}<br><a href="#/incendi/${encodeURIComponent(it.slug)}">${t('list.open')}</a>`);
   });
   fireListMap.fitBounds(withCoords.map(it => [it.lat, it.lon]), { padding:[30,30], maxZoom: 11 });
 }
