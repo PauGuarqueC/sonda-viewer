@@ -800,7 +800,12 @@ async function loadModelProfile(modelParam){
     // disponible per sondes prou antigues (retard tipic d'uns dies).
     if(ref.era5_profile && ref.era5_profile.length){
       modelDataMap[modelParam] = { label: 'ERA5 (CDS)', profile: ref.era5_profile, color: modelColor(modelParam) };
-      setModelStatus(modelParam, 'ERA5 (CDS) · reanàlisi');
+      // era5_target_hour ve del backfill ("YYYY-MM-DDTHH", mateix format que
+      // el targetHour dels models en directe) -- si la sonda es va processar
+      // abans d'afegir aquest camp, es mostra el text generic anterior.
+      setModelStatus(modelParam, ref.era5_target_hour
+        ? `${ref.era5_target_hour.slice(0, 10)} ${ref.era5_target_hour.slice(11)}h UTC (reanàlisi)`
+        : 'ERA5 (CDS) · reanàlisi');
     } else {
       delete modelDataMap[modelParam];
       setModelStatus(modelParam, 'ERA5 no disponible per aquesta sonda (era massa recent quan es va processar, o el CDS no va respondre en aquell moment).');
