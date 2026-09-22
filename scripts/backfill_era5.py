@@ -24,8 +24,18 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "incendis"
 
 
 def needs_era5(sonda_data):
-    if sonda_data.get("era5_profile"):
-        return False
+    existing = sonda_data.get("era5_profile")
+    if existing:
+        # perfils obtinguts abans que fetch_era5_profile inclogués
+        # pressure_mb/temp_c, o abans que es desés era5_target_hour, es
+        # tornen a demanar un cop -- sense pressure_mb/temp_c el perfil no
+        # es pot dibuixar a l'Skew-T, i sense era5_target_hour el visor no
+        # sap dir a quina hora correspon (com fa amb els altres models).
+        if (
+            all("pressure_mb" in pt and "temp_c" in pt for pt in existing)
+            and sonda_data.get("era5_target_hour")
+        ):
+            return False
     m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", sonda_data["sond_id"])
     if not m:
         return False
@@ -38,10 +48,15 @@ def fetch_for(sonda_data):
     m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", sonda_data["sond_id"])
     hh_match = re.match(r"^(\d{2}):", sonda_data.get("launch_time_utc") or "")
     hour = int(hh_match.group(1)) if hh_match else 12
-    return fetch_era5_profile(
+    date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    profile = fetch_era5_profile(
         sonda_data["launch"]["lat"], sonda_data["launch"]["lon"],
-        f"{m.group(1)}-{m.group(2)}-{m.group(3)}", hour
+        date_str, hour
     )
+    # mateix format "YYYY-MM-DDTHH" que el targetHour dels models en directe
+    # (queryModelHost a index.html), perque el visor el pugui mostrar igual.
+    target_hour = f"{date_str}T{hour:02d}"
+    return profile, target_hour
 
 
 def main():
@@ -64,8 +79,10 @@ def main():
             if not needs_era5(sonda_data):
                 continue
             try:
-                sonda_data["era5_profile"] = fetch_for(sonda_data)
-                print(f"[ok] ERA5 obtingut per {sonda_data['sond_id']} ({path.stem.replace('.json','')})")
+                profile, target_hour = fetch_for(sonda_data)
+                sonda_data["era5_profile"] = profile
+                sonda_data["era5_target_hour"] = target_hour
+                print(f"[ok] ERA5 obtingut per {sonda_data['sond_id']} ({path.stem.replace('.json','')}, {target_hour}h UTC)")
                 changed = True
                 total_updated += 1
             except Exception as exc:  # noqa: BLE001
