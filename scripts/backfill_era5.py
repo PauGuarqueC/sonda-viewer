@@ -11,7 +11,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -27,15 +27,18 @@ def needs_era5(sonda_data):
     existing = sonda_data.get("era5_profile")
     if existing:
         # perfils obtinguts abans que fetch_era5_profile inclogués
-        # pressure_mb/temp_c, o abans que es desés era5_target_hour, es
-        # tornen a demanar un cop -- sense pressure_mb/temp_c el perfil no
-        # es pot dibuixar a l'Skew-T, i sense era5_target_hour el visor no
-        # sap dir a quina hora correspon (com fa amb els altres models).
-        if (
-            all("pressure_mb" in pt and "temp_c" in pt for pt in existing)
-            and sonda_data.get("era5_target_hour")
-        ):
-            return False
+        # pressure_mb/temp_c, abans que es desés era5_target_hour, o amb
+        # l'hora mal truncada (cap avall sempre, en lloc d'arrodonida a la
+        # mes propera) es tornen a demanar un cop -- launch_time_utc encara
+        # es conserva a la sonda, aixi que es pot recalcular quina hauria
+        # de ser l'hora correcta i comparar-la amb la que ja hi ha desada.
+        complete = all("pressure_mb" in pt and "temp_c" in pt for pt in existing)
+        stored_hour = sonda_data.get("era5_target_hour")
+        if complete and stored_hour:
+            rounded = rounded_launch_hour(sonda_data)
+            expected_hour = f"{rounded.strftime('%Y-%m-%d')}T{rounded.hour:02d}" if rounded else None
+            if expected_hour is not None and stored_hour == expected_hour:
+                return False
     m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", sonda_data["sond_id"])
     if not m:
         return False
@@ -44,18 +47,37 @@ def needs_era5(sonda_data):
     return age_days >= ERA5_MIN_AGE_DAYS and bool(sonda_data.get("launch"))
 
 
-def fetch_for(sonda_data):
+def rounded_launch_hour(sonda_data):
+    """
+    Arrodoneix la data/hora de llançament a l'hora ERA5 (horaria) mes
+    propera -- p.ex. 13:20 UTC -> 13:00, 13:50 UTC -> 14:00 -- en lloc de
+    truncar sempre cap avall. Fet amb datetime (no nomes substituint el
+    camp "hora") perque un arrodoniment cap amunt a les 23:xx passi
+    correctament al dia seguent a les 00:00.
+    """
     m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", sonda_data["sond_id"])
-    hh_match = re.match(r"^(\d{2}):", sonda_data.get("launch_time_utc") or "")
-    hour = int(hh_match.group(1)) if hh_match else 12
-    date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    if not m:
+        return None
+    hh_mm = re.match(r"^(\d{2}):(\d{2})", sonda_data.get("launch_time_utc") or "")
+    hh = int(hh_mm.group(1)) if hh_mm else 12
+    mm = int(hh_mm.group(2)) if hh_mm else 0
+    launch_dt = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), hh, mm, tzinfo=timezone.utc)
+    rounded = launch_dt.replace(minute=0, second=0, microsecond=0)
+    if mm >= 30:
+        rounded += timedelta(hours=1)
+    return rounded
+
+
+def fetch_for(sonda_data):
+    rounded = rounded_launch_hour(sonda_data)
+    date_str = rounded.strftime("%Y-%m-%d")
     profile = fetch_era5_profile(
         sonda_data["launch"]["lat"], sonda_data["launch"]["lon"],
-        date_str, hour
+        date_str, rounded.hour
     )
     # mateix format "YYYY-MM-DDTHH" que el targetHour dels models en directe
     # (queryModelHost a index.html), perque el visor el pugui mostrar igual.
-    target_hour = f"{date_str}T{hour:02d}"
+    target_hour = f"{date_str}T{rounded.hour:02d}"
     return profile, target_hour
 
 
