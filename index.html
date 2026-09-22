@@ -55,7 +55,7 @@
     background:var(--panel); color:var(--text-dim); border-radius:5px; cursor:pointer;
   }
   .toggle-btn.active{ color:var(--red); border-color:var(--red); }
-  .mini-slider{ display:flex; align-items:center; gap:6px; margin:6px 0 2px; font-family:var(--font-mono); font-size:10px; color:var(--text-dim); }
+  .mini-slider{ display:flex; align-items:center; gap:6px; margin:2px 0 2px; font-family:var(--font-mono); font-size:10px; color:var(--text-dim); }
   .dual-slider{ position:relative; height:16px; flex:1; }
   .dual-slider input[type=range]{
     position:absolute; top:0; left:0; width:100%; margin:0; height:16px;
@@ -71,7 +71,7 @@
     pointer-events:auto; width:11px; height:11px; border-radius:50%;
     background:var(--text-dim); cursor:pointer; border:1.5px solid #fff;
   }
-  .mini-slider .readout{ width:78px; text-align:right; flex-shrink:0; }
+  .mini-slider .readout{ display:none; }
 
   /* ---- slider vertical (alçada dels gràfics de perfil, pressió de l'Skew-T) ----
      reutilitza el mateix .dual-slider (dos <input type=range> horitzontals
