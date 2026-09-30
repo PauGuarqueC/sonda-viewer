@@ -2074,20 +2074,28 @@ function computeMeasuredPlumeTop(s, baseline){
   //
   // Es suavitza abans amb una mitjana mòbil (un sol punt sorollós no ha
   // de desplaçar el resultat) i, sobretot, es busca la PRIMERA
-  // estabilització sostinguda (persistN punts seguits per sota del
-  // llindar) en lloc del darrer punt de tot el perfil que el superi:
-  // agafar el darrer punt de tot el perfil feia que, si mes amunt (per
-  // sobre d'on ja portava estabilitzat centenars de metres) hi havia una
-  // zona sorollosa -- freqüent a prop de l'esclat del globus, en caiguda
-  // lliure irregular -- el "top" saltés fins allà, molt per sobre d'on
-  // realment s'havia acabat la ploma.
+  // estabilització sostinguda en lloc del darrer punt de tot el perfil
+  // que el superi: agafar el darrer punt de tot el perfil feia que, si
+  // mes amunt (per sobre d'on ja portava estabilitzat centenars de
+  // metres) hi havia una zona sorollosa -- freqüent a prop de l'esclat
+  // del globus, en caiguda lliure irregular -- el "top" saltés fins
+  // allà, molt per sobre d'on realment s'havia acabat la ploma.
+  //
+  // La "sostinguda" es defineix per DISTÀNCIA FÍSICA mínima (metres),
+  // no per un nombre fix de punts: la resolució vertical d'una sonda
+  // no és constant (varia entre perfils i fins i tot dins un mateix
+  // perfil), així que un nombre fix de punts pot correspondre a trams
+  // molt curts (uns 50 m) que no basten per confirmar una estabilitzacio
+  // real, o a trams molt llargs segons la mostra. Es requereix que el
+  // valor suavitzat es mantingui per sota del llindar durant almenys
+  // persistMinM metres consecutius.
   const raw = (s.profile || [])
     .filter(p => p.rise_speed_ms != null && p.alt_msl_m != null)
     .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
   if(raw.length < 5) return null;
   const threshold = baseline + Math.max(0.5, baseline * 0.5);
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
-  const persistN = 5; // punts consecutius per sota del llindar per considerar-ho una estabilitzacio real
+  const persistMinM = 200; // distancia minima (m) per sota del llindar per considerar-ho una estabilitzacio real
 
   let lastAboveIdx = -1;
   for(let i = 0; i < raw.length; i++){
@@ -2095,9 +2103,19 @@ function computeMeasuredPlumeTop(s, baseline){
       lastAboveIdx = i;
       continue;
     }
+    // comprova si, a partir d'aqui, es manté per sota del llindar durant
+    // almenys persistMinM metres (en punts, fins que se surti del rang
+    // o del perfil)
     let stable = true;
-    for(let j = i; j < Math.min(i + persistN, raw.length); j++){
+    let j = i;
+    while(j < raw.length && raw[j].alt_msl_m - raw[i].alt_msl_m < persistMinM){
       if(smoothed[j] > threshold){ stable = false; break; }
+      j++;
+    }
+    // si el perfil s'acaba abans d'arribar als persistMinM metres, no es
+    // pot confirmar una estabilitzacio sostinguda -- cal mes dades
+    if(j >= raw.length && raw[raw.length - 1].alt_msl_m - raw[i].alt_msl_m < persistMinM){
+      stable = false;
     }
     if(stable){
       return lastAboveIdx >= 0 ? raw[lastAboveIdx].alt_msl_m : null;
