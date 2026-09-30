@@ -2066,25 +2066,19 @@ function computeMeasuredPlumeTop(s, baseline){
   // Top de columna mesurat (Sect. 3.2 de l'article): la sonda dins la
   // ploma accelera respecte l'ambient mentre és dins l'updraft -- el top
   // s'estima com l'alçada on la velocitat d'ascens torna a l'ambient DE
-  // FORMA SOSTINGUDA.
+  // FORMA SOSTINGUDA, i per tota la resta del perfil mesurat.
   //
-  // Es suavitza abans amb una mitjana mòbil (un sol punt sorollós no ha
-  // de desplaçar el resultat) i, sobretot, es busca la PRIMERA
-  // estabilització sostinguda en lloc del darrer punt de tot el perfil
-  // que el superi: agafar el darrer punt de tot el perfil feia que, si
-  // mes amunt (per sobre d'on ja portava estabilitzat centenars de
-  // metres) hi havia una zona sorollosa -- freqüent a prop de l'esclat
-  // del globus, en caiguda lliure irregular -- el "top" saltés fins
-  // allà, molt per sobre d'on realment s'havia acabat la ploma.
-  //
-  // La "sostinguda" es defineix per DISTÀNCIA FÍSICA mínima (metres),
-  // no per un nombre fix de punts: la resolució vertical d'una sonda
-  // no és constant (varia entre perfils i fins i tot dins un mateix
-  // perfil), així que un nombre fix de punts pot correspondre a trams
-  // molt curts (uns 50 m) que no basten per confirmar una estabilitzacio
-  // real, o a trams molt llargs segons la mostra. Es requereix que el
-  // valor suavitzat es mantingui per sota del llindar durant almenys
-  // persistMinM metres consecutius.
+  // Una ploma sovint té diversos pols convectius (bonys) separats per
+  // caigudes -- i no sempre el segon és més gran que el primer, ni el
+  // primer és el definitiu. Per això no n'hi ha prou amb trobar la
+  // PRIMERA caiguda sostinguda per sota del llindar: cal comprovar que,
+  // per sobre d'aquella caiguda, la velocitat no torna a pujar de
+  // veritat en un nou pols. Es divideix el perfil (suavitzat) en trams
+  // consecutius per sobre/per sota del llindar, es fonen els trams
+  // massa curts (< persistMinM metres) amb el veí -- en qualsevol dels
+  // dos sentits, un tram curt no és ni una pujada real ni una
+  // estabilització real, només soroll -- i es pren com a top el final
+  // de l'ÚLTIM tram "per sobre" que quedi confirmat.
   const raw = (s.profile || [])
     .filter(p => p.rise_speed_ms != null && p.alt_msl_m != null)
     .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
@@ -2096,47 +2090,69 @@ function computeMeasuredPlumeTop(s, baseline){
   // real.
   const threshold = baseline + Math.max(0.5, baseline * 0.25);
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
-  const persistMinM = 200; // distancia minima (m) per sota del llindar per considerar-ho una estabilitzacio real
+  const persistMinM = 200; // distancia minima (m) per considerar real una pujada o una baixada
 
-  // La cerca de l'estabilització sostinguda només té sentit DESPRÉS del
-  // pic de velocitat d'ascens (el punt més fort de la ploma): just després
-  // de l'enlairament, abans que la ploma real hagi començat, sovint hi ha
-  // un tram amb velocitat baixa (transitori de llançament, encara sense
-  // ascens ferm) que no s'ha de confondre amb "el top" -- si es fes així,
-  // es marcaria un top molt per sota d'on la sonda encara accelera
-  // clarament més amunt (p.ex. per sobre de 7,5 m/s).
-  let peakIdx = 0;
-  for(let i = 1; i < smoothed.length; i++){
-    if(smoothed[i] > smoothed[peakIdx]) peakIdx = i;
+  // Trams consecutius per sobre/per sota del llindar.
+  let runs = [];
+  for(let i = 0; i < raw.length; i++){
+    const isAbove = smoothed[i] > threshold;
+    const last = runs[runs.length - 1];
+    if(last && last.above === isAbove){ last.end = i; }
+    else{ runs.push({ start: i, end: i, above: isAbove }); }
+  }
+  const lenM = r => raw[r.end].alt_msl_m - raw[r.start].alt_msl_m;
+
+  // Es fonen iterativament els trams massa curts amb el seu veí (dos
+  // trams consecutius sempre tenen estats oposats, així que un tram curt
+  // "enmig" es pot eliminar sense ambigüitat: els dos trams que queden
+  // a banda i banda ja comparteixen el mateix estat).
+  while(runs.length > 1){
+    let shortestIdx = -1, shortestLen = Infinity;
+    for(let k = 0; k < runs.length; k++){
+      const l = lenM(runs[k]);
+      if(l < persistMinM && l < shortestLen){ shortestLen = l; shortestIdx = k; }
+    }
+    if(shortestIdx === -1) break; // tots els trams ja son prou llargs
+    if(shortestIdx > 0 && shortestIdx < runs.length - 1){
+      const merged = { start: runs[shortestIdx - 1].start, end: runs[shortestIdx + 1].end, above: runs[shortestIdx - 1].above };
+      runs.splice(shortestIdx - 1, 3, merged);
+    } else if(shortestIdx === 0){
+      runs[1] = { start: runs[0].start, end: runs[1].end, above: runs[1].above };
+      runs.splice(0, 1);
+    } else {
+      runs[shortestIdx - 1] = { start: runs[shortestIdx - 1].start, end: runs[shortestIdx].end, above: runs[shortestIdx - 1].above };
+      runs.splice(shortestIdx, 1);
+    }
   }
 
-  let lastAboveIdx = peakIdx;
-  for(let i = peakIdx; i < raw.length; i++){
-    if(smoothed[i] > threshold){
-      lastAboveIdx = i;
-      continue;
-    }
-    // comprova si, a partir d'aqui, es manté per sota del llindar durant
-    // almenys persistMinM metres (en punts, fins que se surti del rang
-    // o del perfil)
-    let stable = true;
-    let j = i;
-    while(j < raw.length && raw[j].alt_msl_m - raw[i].alt_msl_m < persistMinM){
-      if(smoothed[j] > threshold){ stable = false; break; }
-      j++;
-    }
-    // si el perfil s'acaba abans d'arribar als persistMinM metres, no es
-    // pot confirmar una estabilitzacio sostinguda -- cal mes dades
-    if(j >= raw.length && raw[raw.length - 1].alt_msl_m - raw[i].alt_msl_m < persistMinM){
-      stable = false;
-    }
-    if(stable){
-      return lastAboveIdx >= 0 ? raw[lastAboveIdx].alt_msl_m : null;
-    }
+  // Un cop la sonda porta prou estona estabilitzada per sota del llindar
+  // -- no només persistMinM, sinó una estona clarament més llarga --
+  // qualsevol pujada posterior (encara que superi persistMinM per pur
+  // soroll o turbulència en caiguda) ja no s'ha de considerar un nou
+  // pols convectiu real: es dona per bo el PRIMER tram "per sota" prou
+  // llarg com a estabilització definitiva, i es deixa d'escanejar més
+  // amunt. confirmMinM és més gran que persistMinM expressament, perquè
+  // encara calgui poder distingir una caiguda breu entre dos pols reals
+  // (que no arriba a confirmMinM) d'una estabilització de veritat.
+  const confirmMinM = 400;
+  const confirmedBelowIdx = runs.findIndex(r => !r.above && lenM(r) >= confirmMinM);
+  if(confirmedBelowIdx > 0){
+    return raw[runs[confirmedBelowIdx - 1].end].alt_msl_m;
   }
-  // no s'ha trobat cap estabilitzacio sostinguda -- probablement encara
-  // dins la ploma a l'ultim punt mesurat
-  return lastAboveIdx >= 0 ? raw[lastAboveIdx].alt_msl_m : null;
+
+  let lastAboveRun = null;
+  runs.forEach(r => { if(r.above) lastAboveRun = r; });
+  if(!lastAboveRun) return null; // la velocitat d'ascens mai supera el llindar -- no hi ha ploma clara
+  // si l'últim tram confirmat "per sobre" arriba fins al final del
+  // perfil mesurat, vol dir que encara no s'ha vist de veritat
+  // l'estabilització dins del rang mesurat (la sonda es queda sense
+  // dades encara dins la turbulència) -- donar l'últim punt mesurat com
+  // si fos "el top" seria fals precisió (pot ser just un pic local, no
+  // pas on la ploma realment s'acaba). Es retorna null perquè qui crida
+  // aquesta funció (plumeTopForClassification) ja sap caure a
+  // l'estimació per parcel·la MU en aquest cas.
+  if(lastAboveRun.end === raw.length - 1) return null;
+  return raw[lastAboveRun.end].alt_msl_m;
 }
 
 function computeWindShearHeight(s){
