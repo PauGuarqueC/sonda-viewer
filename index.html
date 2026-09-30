@@ -2053,17 +2053,13 @@ function potentialPlumeTop(s, kind){
 }
 
 function ambientRiseSpeedBaseline(sondes){
-  // velocitat d'ascens esperada d'una sonda sense influència de la ploma
-  // (Castellnou et al. 2025): mediana de totes les sondes ambient donades
-  // si n'hi ha, si no el valor teòric ~2 m/s citat a l'article.
-  const ambientVals = [];
-  (sondes || []).forEach(({s}) => {
-    if(s.tipus !== 'ambient') return;
-    (s.profile || []).forEach(p => { if(p.rise_speed_ms != null) ambientVals.push(p.rise_speed_ms); });
-  });
-  if(!ambientVals.length) return 2.0;
-  ambientVals.sort((a, b) => a - b);
-  return ambientVals[Math.floor(ambientVals.length / 2)];
+  // Castellnou et al. 2025 (Sect. 3.2): el criteri per identificar el top
+  // de ploma és que la velocitat d'ascens, tant de la sonda ambient com
+  // de la de columna, s'estabilitza al voltant de 2 m/s -- és un valor
+  // físic fix citat explícitament a l'article, no una mitjana empírica
+  // que calgui recalcular per cada incendi. Es manté el paràmetre
+  // `sondes` per compatibilitat de crida, encara que ja no s'utilitzi.
+  return 2.0;
 }
 
 function computeMeasuredPlumeTop(s, baseline){
@@ -2093,7 +2089,12 @@ function computeMeasuredPlumeTop(s, baseline){
     .filter(p => p.rise_speed_ms != null && p.alt_msl_m != null)
     .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
   if(raw.length < 5) return null;
-  const threshold = baseline + Math.max(0.5, baseline * 0.5);
+  // El marge sobre el baseline ha de ser prou estret perquè "per sota del
+  // llindar" vulgui dir realment "a prop de l'ambient" -- un marge massa
+  // ample (p.ex. +50%) deixava que una caiguda transitòria que mai
+  // s'acostava de veritat al baseline es confongués amb l'estabilització
+  // real.
+  const threshold = baseline + Math.max(0.5, baseline * 0.25);
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
   const persistMinM = 200; // distancia minima (m) per sota del llindar per considerar-ho una estabilitzacio real
 
@@ -2460,6 +2461,9 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraT
     type: 'line',
     data: { datasets },
     plugins: [
+      // Castellnou et al. 2025: la ploma es dona per acabada quan la
+      // velocitat d'ascens s'estabilitza al voltant de 2 m/s -- valor fix
+      // citat a l'article, igual per a totes les sondes i incendis.
       ...(axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : []),
       ...(overlays && axisKey === 'theta' ? [parcelAscentPlugin(() => computeParcelSegmentsFor(sondesFn))] : []),
       ...(overlays ? [horizontalRefLinesPlugin(() => computeRefLinesFor(sondesFn, axisKey === 'rise' ? 'plumetop' : undefined))] : []),
