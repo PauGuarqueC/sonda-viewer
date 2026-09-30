@@ -2116,7 +2116,7 @@ function computeMeasuredPlumeTop(s, baseline){
   // finestra, més avall.
   const pointThreshold = baseline + 0.3;
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
-  const windowM = 400; // finestra per confirmar l'estabilitzacio
+  const windowM = 200; // finestra per confirmar l'estabilitzacio
   const maxWindowMean = baseline + 0.3; // la mitjana de la finestra no pot superar el baseline en mes de 0.3 m/s
 
   let peakIdx = 0;
