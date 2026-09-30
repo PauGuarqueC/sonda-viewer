@@ -146,7 +146,6 @@
   .proto-badge{ border-radius:4px; padding:5px 7px; margin:2px 0 7px; border-left:3px solid var(--text-dim); background:#f4f4f4; }
   .proto-badge .proto-name{ font-family:var(--font-ui); font-weight:600; font-size:11.5px; color:var(--charcoal); }
   .proto-badge .proto-effect{ font-size:10px; line-height:1.35; margin-top:2px; }
-  .proto-badge .proto-detail{ font-size:9.5px; color:var(--text-dim); margin-top:3px; opacity:.85; }
   .proto-badge.proto-unknown{ border-left-color:#bbb; }
   .proto-badge.proto-surface{ border-left-color:#8a8a8a; }
   .proto-badge.proto-convective{ border-left-color:#d99a2b; }
@@ -532,11 +531,6 @@ const I18N = {
     'analysis.noColumnaSondes': 'cap sonda de columna en aquest incendi',
     'analysis.protoTitle': 'Prototip de piroconvecció',
     'analysis.protoUnknown': 'Dades insuficients per classificar (falta ABL, LCL o top de ploma)',
-    'analysis.protoAblAmbient': 'ABL ambient',
-    'analysis.protoAblFire': 'fireABL (sense ambient de referència)',
-    'analysis.protoPlumeMeasured': 'top mesurat',
-    'analysis.protoPlumeParcel': 'top potencial (parcel·la MU)',
-    'analysis.protoWindShear': 'cisallament',
     'analysis.proto.surface.name': 'Columna superficial',
     'analysis.proto.surface.effect': 'Columna diluïda dins l\'ABL, sense efecte notable sobre la propagació.',
     'analysis.proto.convective.name': 'Columna convectiva',
@@ -702,11 +696,6 @@ const I18N = {
     'analysis.noColumnaSondes': 'no column sondes in this wildfire',
     'analysis.protoTitle': 'Pyroconvection prototype',
     'analysis.protoUnknown': 'Not enough data to classify (missing ABL, LCL or plume top)',
-    'analysis.protoAblAmbient': 'ambient ABL',
-    'analysis.protoAblFire': 'fireABL (no ambient reference)',
-    'analysis.protoPlumeMeasured': 'measured top',
-    'analysis.protoPlumeParcel': 'potential top (MU parcel)',
-    'analysis.protoWindShear': 'shear',
     'analysis.proto.surface.name': 'Surface column',
     'analysis.proto.surface.effect': 'Column diluted inside the ABL, no notable effect on fire spread.',
     'analysis.proto.convective.name': 'Convective column',
@@ -1947,7 +1936,7 @@ function meanLayerState(s, layerHpa){
   const tC = thetaMean * Math.pow(sfc.pressure_mb / 1000, 0.286) - 273.15;
   const tdC = tdFromMixingRatio(wMean, sfc.pressure_mb);
 
-  return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC, tdC };
+  return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC, tdC, w: wMean };
 }
 
 function computeLCL_ML(s){
@@ -1978,11 +1967,14 @@ function parcelInitState(s, kind){
   const sfc = sorted[0];
 
   if(kind === 's'){
-    return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC: sfc.temp_c + 3 };
+    // +3K d'escalfament (Luderer et al. 2009 / Potter 2005) no canvia la
+    // raó de mescla -- es conserva la de la pròpia superfície mesurada.
+    const w = mixingRatioFromTRh(sfc.temp_c, sfc.rh_pct, sfc.pressure_mb);
+    return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC: sfc.temp_c + 3, w };
   }
   if(kind === 'ml'){
     const layer = meanLayerState(s);
-    return layer ? { pMb: layer.pMb, altMsl: layer.altMsl, tC: layer.tC } : null;
+    return layer ? { pMb: layer.pMb, altMsl: layer.altMsl, tC: layer.tC, w: layer.w } : null;
   }
   if(kind === 'mu'){
     const layer = sorted.filter(p => sfc.pressure_mb - p.pressure_mb <= 150);
@@ -1993,31 +1985,45 @@ function parcelInitState(s, kind){
     });
     if(!best) return null;
     const tC = bestTheta * Math.pow(sfc.pressure_mb / 1000, 0.286) - 273.15;
-    return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC };
+    // la raó de mescla es la del propi punt mes inestable (es conserva en
+    // portar-lo, seca i adiabàticament, fins a la pressió de superfície)
+    const w = mixingRatioFromTRh(best.temp_c, best.rh_pct, best.pressure_mb);
+    return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC, w };
   }
   return null;
 }
 
 function parcelAscentPath(s, kind){
   // Trajectòria completa d'ascens sec de la parcel·la (Holzworth, 1964):
-  // theta constant des de l'alçada inicial fins que la seva temperatura
-  // creua per sota la de l'entorn (el mateix sondeig fent de perfil
-  // ambiental). Torna prou informació per dibuixar-la com a la Fig. 3a
-  // de l'article (segment vertical a theta constant), no nomes l'alçada
-  // final.
+  // theta constant des de l'alçada inicial fins que creua per sota
+  // l'entorn (el mateix sondeig fent de perfil ambiental). Torna prou
+  // informació per dibuixar-la com a la Fig. 3a de l'article (segment
+  // vertical a theta constant), no nomes l'alçada final.
+  //
+  // La comparació es fa en θᵥ (potencial virtual), no en T ni en θ seca:
+  // el gràfic on es dibuixa aquest segment es el de θᵥ vs alçada (el
+  // mateix camp 'theta_v_k' del perfil), així que si es comparés amb T a
+  // la mateixa pressió (com abans) el punt on la línia deixa de flotar
+  // fisicament NO coincidia amb el punt on la línia vertical realment
+  // creuava la corba dibuixada -- la ratlla semblava "no aturar-se" a la
+  // corba. Durant un ascens sec (sense condensació) la raó de mescla es
+  // conserva igual que θ, així que θᵥ de la parcel·la també es manté
+  // constant -- es pot fer la comparació directament amb el mateix camp
+  // que es dibuixa.
   const init = parcelInitState(s, kind);
   if(!init) return null;
   const thetaK = (init.tC + 273.15) * Math.pow(1000 / init.pMb, 0.286);
+  const w = init.w != null ? init.w : 0;
+  const thetaVK = thetaK * (1 + 0.61 * w);
 
   const env = (s.profile || [])
-    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null)
-    .sort((a, b) => b.pressure_mb - a.pressure_mb);
+    .filter(p => p.theta_v_k != null && p.alt_msl_m != null)
+    .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
   if(!env.length) return null;
 
   let prevDiff = null, prevPt = null, topAltMsl = null, noBuoyancy = false;
   for(const p of env){
-    const tParcelAtP = thetaK * Math.pow(p.pressure_mb / 1000, 0.286) - 273.15;
-    const diff = tParcelAtP - p.temp_c;
+    const diff = thetaVK - p.theta_v_k; // positiu = la parcel·la encara es mes calenta (virtualment) que l'entorn
     if(prevDiff == null && diff < 0){
       // sense flotabilitat ja des de l'inici -- p.ex. la ML surt mes freda
       // que la pròpia superfície mesurada (capa gairebé superadiabàtica):
@@ -2034,8 +2040,11 @@ function parcelAscentPath(s, kind){
     }
     prevDiff = diff; prevPt = p;
   }
-  // topAltMsl es null si no creua l'ambient dins el rang mesurat
-  return { thetaK, sfcAltMsl: init.altMsl, topAltMsl, noBuoyancy };
+  // topAltMsl es null si no creua l'ambient dins el rang mesurat -- es
+  // torna com "thetaK" (encara que ara sigui θᵥ) perquè els consumidors
+  // existents (parcelAscentPlugin, computeParcelSegmentsFor) el facin
+  // servir directament com a coordenada x del gràfic de θᵥ.
+  return { thetaK: thetaVK, sfcAltMsl: init.altMsl, topAltMsl, noBuoyancy };
 }
 
 function potentialPlumeTop(s, kind){
@@ -2060,23 +2069,43 @@ function ambientRiseSpeedBaseline(sondes){
 function computeMeasuredPlumeTop(s, baseline){
   // Top de columna mesurat (Sect. 3.2 de l'article): la sonda dins la
   // ploma accelera respecte l'ambient mentre és dins l'updraft -- el top
-  // s'estima com l'alçada mes alta on encara es manté clarament per sobre
-  // d'aquest valor de referència.
-  // Es suavitza la velocitat d'ascens abans de buscar el llindar: sense
-  // aixo, un sol punt sorollós per sobre del llindar molt mes amunt d'on
-  // realment s'ha estabilitzat a l'ambient (turbulència residual, ratxa
-  // puntual...) allargava el "top" fins aquell punt aïllat, molt per
-  // sobre d'on el perfil ja s'havia estabilitzat visualment al voltant
-  // del valor ambient.
+  // s'estima com l'alçada on la velocitat d'ascens torna a l'ambient DE
+  // FORMA SOSTINGUDA.
+  //
+  // Es suavitza abans amb una mitjana mòbil (un sol punt sorollós no ha
+  // de desplaçar el resultat) i, sobretot, es busca la PRIMERA
+  // estabilització sostinguda (persistN punts seguits per sota del
+  // llindar) en lloc del darrer punt de tot el perfil que el superi:
+  // agafar el darrer punt de tot el perfil feia que, si mes amunt (per
+  // sobre d'on ja portava estabilitzat centenars de metres) hi havia una
+  // zona sorollosa -- freqüent a prop de l'esclat del globus, en caiguda
+  // lliure irregular -- el "top" saltés fins allà, molt per sobre d'on
+  // realment s'havia acabat la ploma.
   const raw = (s.profile || [])
     .filter(p => p.rise_speed_ms != null && p.alt_msl_m != null)
     .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
   if(raw.length < 5) return null;
   const threshold = baseline + Math.max(0.5, baseline * 0.5);
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
-  let topAlt = null;
-  raw.forEach((p, i) => { if(smoothed[i] > threshold) topAlt = p.alt_msl_m; });
-  return topAlt;
+  const persistN = 5; // punts consecutius per sota del llindar per considerar-ho una estabilitzacio real
+
+  let lastAboveIdx = -1;
+  for(let i = 0; i < raw.length; i++){
+    if(smoothed[i] > threshold){
+      lastAboveIdx = i;
+      continue;
+    }
+    let stable = true;
+    for(let j = i; j < Math.min(i + persistN, raw.length); j++){
+      if(smoothed[j] > threshold){ stable = false; break; }
+    }
+    if(stable){
+      return lastAboveIdx >= 0 ? raw[lastAboveIdx].alt_msl_m : null;
+    }
+  }
+  // no s'ha trobat cap estabilitzacio sostinguda -- probablement encara
+  // dins la ploma a l'ultim punt mesurat
+  return lastAboveIdx >= 0 ? raw[lastAboveIdx].alt_msl_m : null;
 }
 
 function computeWindShearHeight(s){
@@ -3751,18 +3780,11 @@ function renderPrototypeBadge(proto){
       <div class="proto-effect">${t('analysis.protoUnknown')}</div>
     </div>`;
   }
-  const ablNote = proto.ablSource === 'ambient' ? t('analysis.protoAblAmbient') : t('analysis.protoAblFire');
-  const plumeNote = proto.plumeSource === 'measured' ? t('analysis.protoPlumeMeasured') : t('analysis.protoPlumeParcel');
-  const detail = [
-    `${ablNote} ${fmtM(proto.abl)}`,
-    `LCL ${fmtM(proto.lcl)}`,
-    `${plumeNote} ${fmtM(proto.plumeTop)}`,
-    proto.windShear != null ? `${t('analysis.protoWindShear')} ${fmtM(proto.windShear)}` : null,
-  ].filter(Boolean).join(' · ');
+  // Ja no es repeteixen ABL/LCL/top aquí sota -- són exactament les
+  // mateixes xifres que ja es mostren a les files de sota del panell.
   return `<div class="proto-badge proto-${proto.key}">
     <div class="proto-name">${t('analysis.proto.'+proto.key+'.name')}</div>
     <div class="proto-effect">${t('analysis.proto.'+proto.key+'.effect')}</div>
-    <div class="proto-detail">${detail}</div>
   </div>`;
 }
 
