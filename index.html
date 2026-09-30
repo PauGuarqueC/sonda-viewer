@@ -2095,30 +2095,29 @@ function computeMeasuredPlumeTop(s, baseline){
   // s'estima com l'alçada on la velocitat d'ascens torna a l'ambient DE
   // FORMA SOSTINGUDA.
   //
-  // Enfoc de finestra mòbil amb tolerància al soroll: es busca, des del
-  // pic de velocitat d'ascens cap amunt, el PRIMER punt a partir del
-  // qual almenys minBelowFrac (80%) de la distància dels següents
-  // windowM metres es manté per sota del llindar. No calen tots els
-  // punts per sota -- una excursió breu de soroll o turbulència dins la
-  // finestra no invalida l'estabilització -- però una pujada llarga de
-  // veritat (un segon pols convectiu, que ocuparia bona part de la
-  // finestra) sí que la invalida i fa continuar la cerca més amunt. Com
-  // que sempre es pren la PRIMERA finestra que compleix el criteri, un
-  // bony tardà molt més amunt (soroll ocasional després d'una
-  // estabilització ja trobada) mai es torna a considerar.
+  // Enfoc de finestra mòbil basat en la MITJANA, no en un simple comptatge
+  // de punts per sobre/sota d'un llindar: es busca, des del pic de
+  // velocitat d'ascens cap amunt, el PRIMER punt a partir del qual la
+  // mitjana (ponderada per distància) dels següents windowM metres es
+  // manté a prop de l'ambient. Just després d'un bony gran sovint hi ha
+  // una zona de transició/entrainment que ja passa prou estona per sota
+  // d'un llindar puntual com per "colar" un criteri de comptatge, però
+  // que encara oscil·la amb prou amplitud (pujades notables intermitents)
+  // que la mitjana de la finestra delata clarament -- la mitjana només
+  // queda a prop del baseline quan la ploma s'ha acabat de veritat.
   const raw = (s.profile || [])
     .filter(p => p.rise_speed_ms != null && p.alt_msl_m != null)
     .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
   if(raw.length < 5) return null;
-  // El marge sobre el baseline ha de ser prou estret perquè "per sota del
-  // llindar" vulgui dir realment "a prop de l'ambient" -- un marge massa
-  // ample deixava que un punt encara clarament per sobre de l'ambient
-  // real (~2 m/s, valor fix de l'article) es marqués com si ja hi hagués
-  // tornat. El baseline és sempre 2.0 m/s (ambientRiseSpeedBaseline).
-  const threshold = baseline + 0.3;
+  // Llindar per punt individual -- nomes per triar ON COMENÇA cada
+  // candidat de baixada (cal un marge ampli aquí perquè el soroll puntual
+  // no trenqui la baixada en molts candidats successius); el criteri que
+  // de debò decideix si és una estabilització real és la mitjana de la
+  // finestra, més avall.
+  const pointThreshold = baseline + 0.3;
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
   const windowM = 400; // finestra per confirmar l'estabilitzacio
-  const minBelowFrac = 0.8; // almenys el 80% de la finestra per sota del llindar
+  const maxWindowMean = baseline + 0.3; // la mitjana de la finestra no pot superar el baseline en mes de 0.3 m/s
 
   let peakIdx = 0;
   for(let i = 1; i < smoothed.length; i++){
@@ -2126,21 +2125,20 @@ function computeMeasuredPlumeTop(s, baseline){
   }
 
   for(let i = peakIdx; i < raw.length; i++){
-    if(smoothed[i] > threshold) continue; // nomes es candidat el punt on ja s'esta per sota
-    if(i > peakIdx && smoothed[i - 1] <= threshold) continue; // no es l'inici d'una baixada -- ja s'havia avaluat aquest tram
+    if(smoothed[i] > pointThreshold) continue; // nomes es candidat el punt on ja s'esta per sota
+    if(i > peakIdx && smoothed[i - 1] <= pointThreshold) continue; // no es l'inici d'una baixada -- ja s'havia avaluat aquest tram
 
-    let belowLenM = 0, totalLenM = 0, j = i;
+    let weightedSum = 0, totalLenM = 0, j = i;
     while(j < raw.length - 1 && raw[j].alt_msl_m - raw[i].alt_msl_m < windowM){
       const dz = raw[j + 1].alt_msl_m - raw[j].alt_msl_m;
-      const aBelow = smoothed[j] <= threshold, bBelow = smoothed[j + 1] <= threshold;
+      weightedSum += (smoothed[j] + smoothed[j + 1]) / 2 * dz; // mitjana trapezoidal del segment
       totalLenM += dz;
-      belowLenM += (aBelow && bBelow) ? dz : (aBelow || bBelow) ? dz * 0.5 : 0;
       j++;
     }
     // si no queden prou dades per omplir la finestra, no es pot confirmar
     // amb garanties -- millor no precipitar-se
     if(totalLenM < windowM * 0.6) continue;
-    if(belowLenM / totalLenM >= minBelowFrac) return raw[i].alt_msl_m;
+    if(weightedSum / totalLenM <= maxWindowMean) return raw[i].alt_msl_m;
   }
   // mai s'ha confirmat una estabilització majoritària -- o bé la velocitat
   // d'ascens no supera mai el llindar (no hi ha ploma clara), o bé la
