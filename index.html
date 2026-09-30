@@ -143,6 +143,17 @@
   .analysis-card .a-row{ display:flex; justify-content:space-between; gap:8px; padding:1px 0; }
   .analysis-card .a-row .a-val{ color:var(--charcoal); white-space:nowrap; }
   .analysis-empty{ font-size:11px; color:var(--text-dim); }
+  .proto-badge{ border-radius:4px; padding:5px 7px; margin:2px 0 7px; border-left:3px solid var(--text-dim); background:#f4f4f4; }
+  .proto-badge .proto-name{ font-family:var(--font-ui); font-weight:600; font-size:11.5px; color:var(--charcoal); }
+  .proto-badge .proto-effect{ font-size:10px; line-height:1.35; margin-top:2px; }
+  .proto-badge .proto-detail{ font-size:9.5px; color:var(--text-dim); margin-top:3px; opacity:.85; }
+  .proto-badge.proto-unknown{ border-left-color:#bbb; }
+  .proto-badge.proto-surface{ border-left-color:#8a8a8a; }
+  .proto-badge.proto-convective{ border-left-color:#d99a2b; }
+  .proto-badge.proto-overshoot{ border-left-color:#e0731f; }
+  .proto-badge.proto-shallow{ border-left-color:#e0731f; }
+  .proto-badge.proto-towering{ border-left-color:var(--red); }
+  .proto-badge.proto-pyrocb{ border-left-color:var(--red); background:#fbe9e9; }
 
   #incendiContent{ padding:20px 22px 6px; }
   .section-title{ display:flex; align-items:baseline; margin-bottom:10px; gap:14px; }
@@ -519,6 +530,25 @@ const I18N = {
     'analysis.columnaSelectLabel': 'Sonda de columna:',
     'analysis.ambientHint': '+ sondes ambient actives al perfil, per comparar',
     'analysis.noColumnaSondes': 'cap sonda de columna en aquest incendi',
+    'analysis.protoTitle': 'Prototip de piroconvecció',
+    'analysis.protoUnknown': 'Dades insuficients per classificar (falta ABL, LCL o top de ploma)',
+    'analysis.protoAblAmbient': 'ABL ambient',
+    'analysis.protoAblFire': 'fireABL (sense ambient de referència)',
+    'analysis.protoPlumeMeasured': 'top mesurat',
+    'analysis.protoPlumeParcel': 'top potencial (parcel·la MU)',
+    'analysis.protoWindShear': 'cisallament',
+    'analysis.proto.surface.name': 'Ploma superficial',
+    'analysis.proto.surface.effect': 'Ploma diluïda dins l\'ABL, sense efecte notable sobre la propagació.',
+    'analysis.proto.convective.name': 'Ploma convectiva',
+    'analysis.proto.convective.effect': 'Intensificació del comportament del foc i espurnejat de curt abast.',
+    'analysis.proto.overshoot.name': 'PyroCu amb overshooting',
+    'analysis.proto.overshoot.effect': 'Acceleració sostinguda i espurnejat de curt abast constant. Elongació del perímetre.',
+    'analysis.proto.shallow.name': 'PyroCu superficial',
+    'analysis.proto.shallow.effect': 'Acceleració sostinguda amb polsos d\'expansió del perímetre i espurnejat de llarg abast.',
+    'analysis.proto.towering.name': 'PyroCu de torre',
+    'analysis.proto.towering.effect': 'Propagació extrema sostinguda, amb possibles downdrafts i comportament caòtic.',
+    'analysis.proto.pyrocb.name': 'PyroCb',
+    'analysis.proto.pyrocb.effect': 'Comportament caòtic i sostingut per downdrafts, amb espurnejat de llarg abast.',
     'profile.title': 'Perfil vertical',
     'profile.hint': 'eix d\'alçada compartit entre panells i sondes',
     'common.downloadImage': 'Descarrega imatge',
@@ -670,6 +700,25 @@ const I18N = {
     'analysis.columnaSelectLabel': 'Column sonde:',
     'analysis.ambientHint': '+ active ambient sondes from the profile, for comparison',
     'analysis.noColumnaSondes': 'no column sondes in this wildfire',
+    'analysis.protoTitle': 'Pyroconvection prototype',
+    'analysis.protoUnknown': 'Not enough data to classify (missing ABL, LCL or plume top)',
+    'analysis.protoAblAmbient': 'ambient ABL',
+    'analysis.protoAblFire': 'fireABL (no ambient reference)',
+    'analysis.protoPlumeMeasured': 'measured top',
+    'analysis.protoPlumeParcel': 'potential top (MU parcel)',
+    'analysis.protoWindShear': 'shear',
+    'analysis.proto.surface.name': 'Surface plume',
+    'analysis.proto.surface.effect': 'Plume diluted inside the ABL, no notable effect on fire spread.',
+    'analysis.proto.convective.name': 'Convective plume',
+    'analysis.proto.convective.effect': 'Fire behavior intensification and short-distance spotting.',
+    'analysis.proto.overshoot.name': 'Overshooting pyroCu',
+    'analysis.proto.overshoot.effect': 'Sustained fire spread acceleration and constant short-distance spotting. Perimeter elongation.',
+    'analysis.proto.shallow.name': 'Shallow pyroCu',
+    'analysis.proto.shallow.effect': 'Sustained acceleration with perimeter expansion pulses and long-distance spotting.',
+    'analysis.proto.towering.name': 'Towering pyroCu',
+    'analysis.proto.towering.effect': 'Sustained extreme spread, with possible downdrafts and chaotic behavior.',
+    'analysis.proto.pyrocb.name': 'PyroCb',
+    'analysis.proto.pyrocb.effect': 'Sustained chaotic behavior driven by downdrafts, with long-distance spotting.',
     'profile.title': 'Vertical profile',
     'profile.hint': 'height axis shared between panels and sondes',
     'common.downloadImage': 'Download image',
@@ -1964,6 +2013,122 @@ function computeMeasuredPlumeTop(s, baseline){
   let topAlt = null;
   profile.forEach(p => { if(p.rise_speed_ms > threshold) topAlt = p.alt_msl_m; });
   return topAlt;
+}
+
+function computeWindShearHeight(s){
+  // Alçada del gradient màxim de vent (velocitat i direcció combinats),
+  // vegeu Taula 2 de Castellnou et al. 2025 -- es fa servir nomes com a
+  // dada de suport per classificar el prototip de piroconvecció (Taula
+  // 3), no es torna a dibuixar com a línia als gràfics (l'usuari ho va
+  // treure explícitament per no saturar-los).
+  const profile = (s.profile || [])
+    .filter(p => p.wind_speed_ms != null && p.wind_dir_deg != null && p.alt_msl_m != null)
+    .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
+  if(profile.length < 3) return null;
+  let bestGrad = -1, bestAlt = null;
+  for(let i = 1; i < profile.length; i++){
+    const a = profile[i-1], b = profile[i];
+    const dAlt = b.alt_msl_m - a.alt_msl_m;
+    if(dAlt <= 0) continue;
+    const dSpeed = Math.abs(b.wind_speed_ms - a.wind_speed_ms);
+    let dDir = Math.abs(b.wind_dir_deg - a.wind_dir_deg);
+    if(dDir > 180) dDir = 360 - dDir;
+    const grad = (dSpeed + dDir / 15) / dAlt; // combina velocitat (m/s) i direcció (°, pesada per no dominar)
+    if(grad > bestGrad){ bestGrad = grad; bestAlt = (a.alt_msl_m + b.alt_msl_m) / 2; }
+  }
+  return bestAlt;
+}
+
+// ============================================================
+// Prototip de piroconvecció (Taula 3 de Castellnou et al. 2025)
+// ============================================================
+// La Taula 3 classifica cada sondeig segons tres eixos, avaluats "a ull"
+// sobre el skew-T a l'article (Fig. 3): (1) alçada del top de la ploma
+// respecte l'ABL, (2) la ràtio LCL/ABL, i (3) la posició del cisallament
+// de vent. Aqui es reprodueix amb llindars numèrics raonables (l'article
+// no en dona de tancats, nomes categories qualitatives ≫1/>1/≤1 i
+// "per sobre/per sota/coincidint"), triats perquè el resultat quedi
+// arrodonit a la categoria mes propera de les sis definides -- no és una
+// fórmula exacta de l'article, és la millor aproximació automàtica que
+// se'n pot fer.
+const PYRO_PROTOTYPES = [
+  { key: 'surface',    plumeBand: 0, ratioBand: 0 },
+  { key: 'convective', plumeBand: 1, ratioBand: 0 },
+  { key: 'overshoot',  plumeBand: 2, ratioBand: 1 },
+  { key: 'shallow',    plumeBand: 2, ratioBand: 2 },
+  { key: 'towering',   plumeBand: 3, ratioBand: 2 }, // o pyroCb si Ta < -35°C al top
+];
+
+function plumeTopForClassification(s){
+  // Prefereix el top mesurat (velocitat d'ascens, Sect. 3.2); si no n'hi
+  // ha (p.ex. la sonda encara no ha tornat a l'ambient dins del rang
+  // mesurat), cau a l'alçada potencial de la parcel·la MU -- la mes
+  // representativa de les tres segons l'article -- sempre que tingui
+  // flotabilitat.
+  const measured = computeMeasuredPlumeTop(s, ambientRiseSpeedBaseline(analysisViewSondes()));
+  if(measured != null) return { value: measured, source: 'measured' };
+  const mu = parcelAscentPath(s, 'mu');
+  if(mu && mu.topAltMsl != null && !mu.noBuoyancy) return { value: mu.topAltMsl, source: 'parcel' };
+  return { value: null, source: null };
+}
+
+function tempAtAltitude(s, altMsl){
+  // Interpola temp_c del propi sondeig a una alçada donada -- fa servir
+  // el perfil intern de la sonda de columna com a proxy de la
+  // temperatura ambient al cim de la ploma (Ta a la Taula 3, llindar
+  // -35°C per distingir pyroCb de towering pyroCu).
+  const profile = (s.profile || [])
+    .filter(p => p.temp_c != null && p.alt_msl_m != null)
+    .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
+  if(profile.length < 2) return null;
+  if(altMsl <= profile[0].alt_msl_m || altMsl >= profile[profile.length - 1].alt_msl_m) return null; // fora del rang mesurat, no extrapolem
+  for(let i = 1; i < profile.length; i++){
+    const a = profile[i-1], b = profile[i];
+    if(altMsl >= a.alt_msl_m && altMsl <= b.alt_msl_m){
+      const frac = (b.alt_msl_m - a.alt_msl_m) > 0 ? (altMsl - a.alt_msl_m) / (b.alt_msl_m - a.alt_msl_m) : 0;
+      return a.temp_c + frac * (b.temp_c - a.temp_c);
+    }
+  }
+  return null;
+}
+
+function classifyPyroconvection(s, ambientAbl){
+  // Torna {key, ablSource, plumeSource, windShear} o null si no hi ha
+  // prou dades (falta ABL, LCL o top de ploma). ambientAbl: ABL de la
+  // sonda ambient activa si n'hi ha (referencia preferida per la Taula
+  // 3); si no n'hi ha, es fa servir la pròpia fireABL de la sonda de
+  // columna com a aproximació (menys fiable, es marca com a tal).
+  let abl = ambientAbl, ablSource = 'ambient';
+  if(abl == null){ abl = computeABLh(s); ablSource = 'fireABL'; }
+  const lcl = computeLCL_ML(s);
+  const { value: plumeTop, source: plumeSource } = plumeTopForClassification(s);
+  if(abl == null || lcl == null || plumeTop == null) return null;
+
+  const ratio = lcl / abl;
+  const ratioBand = ratio >= 2.0 ? 0 : (ratio >= 1.0 ? 1 : 2); // 0=≫1(sec), 1=>1(moderat), 2=≤1(humit)
+  const plumeBand = plumeTop < abl * 0.95 ? 0
+    : plumeTop < abl * 1.3 ? 1
+    : plumeTop < abl * 2.5 ? 2
+    : 3; // 0=per sota, 1=≥ABL, 2=>ABL, 3=≫ABL
+
+  let best = PYRO_PROTOTYPES[0], bestDist = Infinity;
+  PYRO_PROTOTYPES.forEach(p => {
+    const dist = Math.abs(p.plumeBand - plumeBand) + Math.abs(p.ratioBand - ratioBand);
+    if(dist < bestDist){ bestDist = dist; best = p; }
+  });
+
+  let key = best.key;
+  let taC = null;
+  if(key === 'towering'){
+    taC = tempAtAltitude(s, plumeTop);
+    if(taC != null && taC < -35) key = 'pyrocb';
+  }
+
+  return {
+    key, ablSource, plumeSource, abl, lcl, ratio, plumeTop,
+    windShear: computeWindShearHeight(s),
+    taC,
+  };
 }
 
 function computeParcelSegmentsFor(sondesFn){
@@ -3481,6 +3646,8 @@ function renderAnalysisViewPanel(){
     return;
   }
   const baseline = ambientRiseSpeedBaseline(sondes);
+  const ambientEntry = sondes.find(({s}) => s.tipus === 'ambient');
+  const ambientAbl = ambientEntry ? computeABLh(ambientEntry.s) : null;
 
   panel.innerHTML = sondes.map(({s, color}) => {
     const abl = computeABLh(s);
@@ -3499,11 +3666,40 @@ function renderAnalysisViewPanel(){
     }
     rows.push([t('analysis.parcels'), `S ${fmtParcel(parcelS)} · ML ${fmtParcel(parcelML)} · MU ${fmtParcel(parcelMU)}`]);
 
+    const proto = s.tipus === 'columna' ? classifyPyroconvection(s, ambientAbl) : null;
+
     return `<div class="analysis-card">
       <div class="a-head"><span class="swatch" style="background:${color}"></span><span>${sondaLabel(s.sond_id)}</span></div>
+      ${s.tipus === 'columna' ? renderPrototypeBadge(proto) : ''}
       ${rows.map(([label, val]) => `<div class="a-row"><span>${label}</span><span class="a-val">${val}</span></div>`).join('')}
     </div>`;
   }).join('');
+}
+
+function renderPrototypeBadge(proto){
+  // Taula 3 de Castellnou et al. 2025: classifica la sonda de columna en
+  // un dels sis prototips de piroconvecció, a partir del top de ploma
+  // (mesurat o potencial de la parcel·la MU), l'ABL i el LCL -- vegeu
+  // classifyPyroconvection. Es mostra nomes per sondes de columna.
+  if(!proto){
+    return `<div class="proto-badge proto-unknown">
+      <div class="proto-name">${t('analysis.protoTitle')}</div>
+      <div class="proto-effect">${t('analysis.protoUnknown')}</div>
+    </div>`;
+  }
+  const ablNote = proto.ablSource === 'ambient' ? t('analysis.protoAblAmbient') : t('analysis.protoAblFire');
+  const plumeNote = proto.plumeSource === 'measured' ? t('analysis.protoPlumeMeasured') : t('analysis.protoPlumeParcel');
+  const detail = [
+    `${ablNote} ${fmtM(proto.abl)}`,
+    `LCL ${fmtM(proto.lcl)}`,
+    `${plumeNote} ${fmtM(proto.plumeTop)}`,
+    proto.windShear != null ? `${t('analysis.protoWindShear')} ${fmtM(proto.windShear)}` : null,
+  ].filter(Boolean).join(' · ');
+  return `<div class="proto-badge proto-${proto.key}">
+    <div class="proto-name">${t('analysis.proto.'+proto.key+'.name')}</div>
+    <div class="proto-effect">${t('analysis.proto.'+proto.key+'.effect')}</div>
+    <div class="proto-detail">${detail}</div>
+  </div>`;
 }
 
 // ============================================================
