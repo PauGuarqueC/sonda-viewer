@@ -1756,7 +1756,11 @@ function meanLayerState(s, layerHpa){
   // article) -- en lloc dels valors puntuals de superfície.
   layerHpa = layerHpa || 150;
   const sorted = (s.profile || [])
-    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null)
+    // theta_v_k != null perquè la superfície de referència coincideixi
+    // exactament amb el primer punt que es dibuixa a la corba de θᵥ (si
+    // no, els primers punts sense HR encara vàlida es descarten de la
+    // corba pero no d'aquí, i la parcel·la surt desplaçada per sota)
+    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null && p.theta_v_k != null)
     .sort((a, b) => b.pressure_mb - a.pressure_mb);
   if(!sorted.length) return null;
   const sfc = sorted[0];
@@ -1802,7 +1806,7 @@ function parcelInitState(s, kind){
   // l'article: S (superfície +3K), ML (mitjana de capa) i MU (la que té
   // la theta mes alta dins la capa inferior -- "most unstable").
   const sorted = (s.profile || [])
-    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null)
+    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null && p.theta_v_k != null)
     .sort((a, b) => b.pressure_mb - a.pressure_mb);
   if(!sorted.length) return null;
   const sfc = sorted[0];
@@ -1958,9 +1962,11 @@ function parcelAscentPlugin(getSegments){
 }
 
 function horizontalRefLinesPlugin(getLines){
-  // Petites fletxes al marge dret (a l'estil de la Fig. 3e de Castellnou
-  // et al. 2025), en lloc d'una línia sencera a través de tot el gràfic --
-  // menys soroll visual quan hi ha diverses sondes i mètriques alhora.
+  // Línia horitzontal fina a través de tot el gràfic (Fig. 3a-d de
+  // Castellnou et al. 2025), amb l'etiqueta a l'extrem dret -- ara que
+  // les parcel·les es dibuixen a part (parcelAscentPlugin) i el
+  // cisallament s'ha tret, nomes hi queden ABLh/LCL/top, així que no
+  // satura com abans.
   return {
     id: 'hRefLines',
     afterDraw(chart){
@@ -1983,19 +1989,19 @@ function horizontalRefLinesPlugin(getLines){
           rowsUsed.push(y);
 
           ctx.save();
-          ctx.fillStyle = line.color;
           ctx.strokeStyle = line.color;
-          const tipX = xScale.right;
+          ctx.fillStyle = line.color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 3]);
           ctx.beginPath();
-          ctx.moveTo(tipX, y);
-          ctx.lineTo(tipX + 6, y - 3.5);
-          ctx.lineTo(tipX + 6, y + 3.5);
-          ctx.closePath();
-          ctx.fill();
+          ctx.moveTo(xScale.left, y);
+          ctx.lineTo(xScale.right, y);
+          ctx.stroke();
           if(line.label){
+            ctx.setLineDash([]);
             ctx.font = '9px "Roboto Mono", monospace';
             ctx.textAlign = 'left';
-            ctx.fillText(line.label, tipX + 9, y + 3);
+            ctx.fillText(line.label, xScale.right + 3, y + 3);
           }
           ctx.restore();
         });
