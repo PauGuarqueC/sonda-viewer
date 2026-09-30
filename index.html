@@ -136,6 +136,12 @@
   .sonda-row .tp{ color:var(--text-dim); font-size:11px; }
   .sonda-row .tp-edit{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); border:1px solid var(--panel-border); border-radius:3px; padding:1px 2px; background:#fff; }
   .sidebar-note{ font-size:11px; color:var(--text-dim); margin-top:14px; line-height:1.5; border-top:1px solid var(--panel-border); padding-top:12px; }
+  .analysis-card{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin-bottom:10px; }
+  .analysis-card:last-child{ margin-bottom:0; }
+  .analysis-card .a-head{ display:flex; align-items:center; gap:6px; color:var(--charcoal); font-size:11px; margin-bottom:3px; }
+  .analysis-card .a-row{ display:flex; justify-content:space-between; gap:8px; padding:1px 0; }
+  .analysis-card .a-row .a-val{ color:var(--charcoal); white-space:nowrap; }
+  .analysis-empty{ font-size:11px; color:var(--text-dim); }
 
   #incendiContent{ padding:20px 22px 6px; }
   .section-title{ display:flex; align-items:baseline; margin-bottom:10px; gap:14px; }
@@ -271,6 +277,11 @@
       <div class="sidebar-note" style="border-top:1px solid var(--panel-border); margin-top:14px; padding-top:12px;">
         <div style="font-weight:500; color:var(--text); margin-bottom:6px;" data-i18n="sidebar.modelProfiles">Perfils de model</div>
         <div id="modelCheckList"></div>
+      </div>
+
+      <div class="sidebar-note" style="border-top:1px solid var(--panel-border); margin-top:14px; padding-top:12px;">
+        <div style="font-weight:500; color:var(--text); margin-bottom:6px;" data-i18n="sidebar.analysisTitle">Anàlisi</div>
+        <div id="analysisPanel"></div>
       </div>
     </div>
 
@@ -449,6 +460,14 @@ const I18N = {
     'sidebar.title': 'Sondes d\'aquest incendi',
     'sidebar.colorNote': 'Ambient en tons blau-verdosos, columna en tons vermell-taronjats. Amb més d\'una sonda activa del mateix tipus, cada una porta un to diferent.',
     'sidebar.modelProfiles': 'Perfils de model',
+    'sidebar.analysisTitle': 'Anàlisi',
+    'analysis.empty': 'Marca una sonda per veure\'n l\'anàlisi.',
+    'analysis.ablAmbient': 'ABL',
+    'analysis.ablFire': 'fireABL',
+    'analysis.lclMean': 'LCL (mitjana capa)',
+    'analysis.plumeTop': 'top mesurat (vel. ascens)',
+    'analysis.parcels': 'parcel·les (alçada potencial)',
+    'analysis.none': '—',
     'profile.title': 'Perfil vertical',
     'profile.hint': 'eix d\'alçada compartit entre panells i sondes',
     'common.downloadImage': 'Descarrega imatge',
@@ -584,6 +603,14 @@ const I18N = {
     'sidebar.title': 'Sondes of this wildfire',
     'sidebar.colorNote': 'Ambient in blue-green tones, column in red-orange tones. With more than one active sonde of the same type, each one gets a different shade.',
     'sidebar.modelProfiles': 'Model profiles',
+    'sidebar.analysisTitle': 'Analysis',
+    'analysis.empty': 'Check a sonde to see its analysis.',
+    'analysis.ablAmbient': 'ABL',
+    'analysis.ablFire': 'fireABL',
+    'analysis.lclMean': 'LCL (layer mean)',
+    'analysis.plumeTop': 'measured top (rise speed)',
+    'analysis.parcels': 'parcels (potential height)',
+    'analysis.none': '—',
     'profile.title': 'Vertical profile',
     'profile.hint': 'height axis shared between panels and sondes',
     'common.downloadImage': 'Download image',
@@ -1671,6 +1698,166 @@ function computeLCL(s){
   const lclAgl = (Rd / g) * Tmean * Math.log(sfc.pressure_mb / lcl.P_LCL_mb); // equacio hipsometrica
 
   return sfc.alt_msl_m + Math.max(lclAgl, 0);
+}
+
+// ============================================================
+// Anàlisi (Castellnou et al. 2025, AMT-18-7805): top de columna,
+// modificació de l'ABL, parcel·les S/ML/MU i LCL de capa mitjana.
+// ============================================================
+
+function mixingRatioFromTRh(tempC, rhPct, pressureMb){
+  // raó de mescla real (no saturada) a partir de T, HR i pressió.
+  if(tempC == null || rhPct == null || pressureMb == null) return null;
+  const es = satVaporPressure(tempC);
+  const e = (rhPct / 100) * es;
+  const denom = pressureMb - e;
+  return denom > 0 ? 0.622 * e / denom : null;
+}
+
+function tdFromMixingRatio(w, pressureMb){
+  // inversa de mixingRatioFromTRh: temperatura de rosada a partir de la
+  // raó de mescla i la pressió (mateixa formula de Bolton que dewpointC).
+  if(w == null || w <= 0 || pressureMb == null) return null;
+  const e = w * pressureMb / (0.622 + w);
+  if(e <= 0) return null;
+  const lnE = Math.log(e / 6.112);
+  return (243.5 * lnE) / (17.67 - lnE);
+}
+
+function meanLayerState(s, layerHpa){
+  // valors mitjans (theta i raó de mescla) de la capa inferior del
+  // sondeig (per defecte els 150hPa de sota, com el parcel ML de l'
+  // article) -- en lloc dels valors puntuals de superfície.
+  layerHpa = layerHpa || 150;
+  const sorted = (s.profile || [])
+    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null)
+    .sort((a, b) => b.pressure_mb - a.pressure_mb);
+  if(!sorted.length) return null;
+  const sfc = sorted[0];
+  const layer = sorted.filter(p => sfc.pressure_mb - p.pressure_mb <= layerHpa);
+  const withRh = layer.filter(p => p.rh_pct != null && p.rh_pct > 0);
+  if(!withRh.length) return null;
+
+  let thetaSum = 0, wSum = 0, n = 0;
+  withRh.forEach(p => {
+    const T_K = p.temp_c + 273.15;
+    thetaSum += T_K * Math.pow(1000 / p.pressure_mb, 0.286);
+    const w = mixingRatioFromTRh(p.temp_c, p.rh_pct, p.pressure_mb);
+    if(w != null){ wSum += w; n++; }
+  });
+  if(!n) return null;
+  const thetaMean = thetaSum / withRh.length;
+  const wMean = wSum / n;
+  const tC = thetaMean * Math.pow(sfc.pressure_mb / 1000, 0.286) - 273.15;
+  const tdC = tdFromMixingRatio(wMean, sfc.pressure_mb);
+
+  return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC, tdC };
+}
+
+function computeLCL_ML(s){
+  // LCL calculat amb els valors mitjans de la capa inferior (parcel ML),
+  // en lloc del punt de superfície -- vegeu computeLCL per l'equacio
+  // hipsomètrica que converteix la pressió del LCL en alçada.
+  const layer = meanLayerState(s);
+  if(!layer || layer.tdC == null) return null;
+  const lcl = lclFromTTd(layer.tC, layer.tdC, layer.pMb);
+  if(!lcl) return null;
+
+  const Rd = 287.05, g = 9.81;
+  const T_K = layer.tC + 273.15, T_LCL_K = lcl.T_LCL_C + 273.15;
+  const Tmean = (T_K + T_LCL_K) / 2;
+  const lclAgl = (Rd / g) * Tmean * Math.log(layer.pMb / lcl.P_LCL_mb);
+
+  return layer.altMsl + Math.max(lclAgl, 0);
+}
+
+function parcelInitState(s, kind){
+  // Estat inicial (pressió, alçada, T) de les tres parcel·les de
+  // l'article: S (superfície +3K), ML (mitjana de capa) i MU (la que té
+  // la theta mes alta dins la capa inferior -- "most unstable").
+  const sorted = (s.profile || [])
+    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null)
+    .sort((a, b) => b.pressure_mb - a.pressure_mb);
+  if(!sorted.length) return null;
+  const sfc = sorted[0];
+
+  if(kind === 's'){
+    return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC: sfc.temp_c + 3 };
+  }
+  if(kind === 'ml'){
+    const layer = meanLayerState(s);
+    return layer ? { pMb: layer.pMb, altMsl: layer.altMsl, tC: layer.tC } : null;
+  }
+  if(kind === 'mu'){
+    const layer = sorted.filter(p => sfc.pressure_mb - p.pressure_mb <= 150);
+    let best = null, bestTheta = -Infinity;
+    layer.forEach(p => {
+      const theta = (p.temp_c + 273.15) * Math.pow(1000 / p.pressure_mb, 0.286);
+      if(theta > bestTheta){ bestTheta = theta; best = p; }
+    });
+    if(!best) return null;
+    const tC = bestTheta * Math.pow(sfc.pressure_mb / 1000, 0.286) - 273.15;
+    return { pMb: sfc.pressure_mb, altMsl: sfc.alt_msl_m, tC };
+  }
+  return null;
+}
+
+function potentialPlumeTop(s, kind){
+  // Alçada potencial de la ploma segons el mètode de la parcel·la
+  // (Holzworth, 1964): ascens sec (theta constant) des de l'estat
+  // inicial fins que la seva temperatura creua per sota la de l'entorn
+  // (el mateix sondeig fent de perfil ambiental) -- igual que el mètode
+  // clàssic per estimar l'alçada màxima de la capa de mescla.
+  const init = parcelInitState(s, kind);
+  if(!init) return null;
+  const thetaParcel = (init.tC + 273.15) * Math.pow(1000 / init.pMb, 0.286);
+
+  const env = (s.profile || [])
+    .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null)
+    .sort((a, b) => b.pressure_mb - a.pressure_mb);
+  if(!env.length) return null;
+
+  let prevDiff = null, prevPt = null;
+  for(const p of env){
+    const tParcelAtP = thetaParcel * Math.pow(p.pressure_mb / 1000, 0.286) - 273.15;
+    const diff = tParcelAtP - p.temp_c;
+    if(prevDiff == null && diff < 0) return p.alt_msl_m; // sense flotabilitat ja des de l'inici
+    if(prevDiff != null && prevDiff >= 0 && diff < 0){
+      const frac = prevDiff / (prevDiff - diff);
+      return prevPt.alt_msl_m + frac * (p.alt_msl_m - prevPt.alt_msl_m);
+    }
+    prevDiff = diff; prevPt = p;
+  }
+  return null; // no creua l'ambient dins el rang mesurat
+}
+
+function ambientRiseSpeedBaseline(){
+  // velocitat d'ascens esperada d'una sonda sense influència de la ploma
+  // (Castellnou et al. 2025): mediana de totes les sondes ambient actives
+  // si n'hi ha, si no el valor teòric ~2 m/s citat a l'article.
+  const ambientVals = [];
+  activeSondes().forEach(({s}) => {
+    if(s.tipus !== 'ambient') return;
+    (s.profile || []).forEach(p => { if(p.rise_speed_ms != null) ambientVals.push(p.rise_speed_ms); });
+  });
+  if(!ambientVals.length) return 2.0;
+  ambientVals.sort((a, b) => a - b);
+  return ambientVals[Math.floor(ambientVals.length / 2)];
+}
+
+function computeMeasuredPlumeTop(s, baseline){
+  // Top de columna mesurat (Sect. 3.2 de l'article): la sonda dins la
+  // ploma accelera respecte l'ambient mentre és dins l'updraft -- el top
+  // s'estima com l'alçada mes alta on encara es manté clarament per sobre
+  // d'aquest valor de referència.
+  const profile = (s.profile || [])
+    .filter(p => p.rise_speed_ms != null && p.alt_msl_m != null)
+    .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
+  if(profile.length < 3) return null;
+  const threshold = baseline + Math.max(0.5, baseline * 0.5);
+  let topAlt = null;
+  profile.forEach(p => { if(p.rise_speed_ms > threshold) topAlt = p.alt_msl_m; });
+  return topAlt;
 }
 
 function horizontalRefLinesPlugin(getLines){
@@ -3035,6 +3222,45 @@ function renderAllCharts(){
   });
   renderSkewT();
   renderDrift();
+  renderAnalysisPanel();
+}
+
+function fmtM(v){
+  return v == null ? t('analysis.none') : `${Math.round(v)} m`;
+}
+
+function renderAnalysisPanel(){
+  const panel = document.getElementById('analysisPanel');
+  if(!panel) return;
+  const sondes = activeSondes();
+  if(!sondes.length){
+    panel.innerHTML = `<div class="analysis-empty">${t('analysis.empty')}</div>`;
+    return;
+  }
+  const baseline = ambientRiseSpeedBaseline();
+
+  panel.innerHTML = sondes.map(({s, color}) => {
+    const abl = computeABLh(s);
+    const lclMean = computeLCL_ML(s);
+    const parcelS = potentialPlumeTop(s, 's');
+    const parcelML = potentialPlumeTop(s, 'ml');
+    const parcelMU = potentialPlumeTop(s, 'mu');
+    const ablLabel = s.tipus === 'columna' ? t('analysis.ablFire') : t('analysis.ablAmbient');
+
+    const rows = [
+      [ablLabel, fmtM(abl)],
+      [t('analysis.lclMean'), fmtM(lclMean)],
+    ];
+    if(s.tipus === 'columna'){
+      rows.push([t('analysis.plumeTop'), fmtM(computeMeasuredPlumeTop(s, baseline))]);
+    }
+    rows.push([t('analysis.parcels'), `S ${fmtM(parcelS)} · ML ${fmtM(parcelML)} · MU ${fmtM(parcelMU)}`]);
+
+    return `<div class="analysis-card">
+      <div class="a-head"><span class="swatch" style="background:${color}"></span><span>${sondaLabel(s.sond_id)}</span></div>
+      ${rows.map(([label, val]) => `<div class="a-row"><span>${label}</span><span class="a-val">${val}</span></div>`).join('')}
+    </div>`;
+  }).join('');
 }
 
 // ============================================================
