@@ -417,6 +417,7 @@
           <select id="analysisColumnaSelect" style="padding:3px 6px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:11.5px;"></select>
         </label>
         <span class="hint" data-i18n="analysis.ambientHint">+ sondes ambient actives al perfil, per comparar</span>
+        <div id="analysisAmbientToggles" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"></div>
       </div>
       <div class="profile-strip">
         <div class="block">
@@ -1097,6 +1098,7 @@ let INCENDI = null;
 let currentSlug = null;
 let activeIds = new Set();
 let analysisColumnaId = null; // sond_id de la sonda de columna seleccionada a la vista d'anàlisi (independent de activeIds)
+let analysisHiddenAmbientIds = new Set(); // sond_id de sondes ambient actives al perfil pero amagades nomes a la vista d'anàlisi
 const MAX_ACTIVE_SONDES = 4; // com a màxim 4 sondes dibuixades alhora als gràfics
 
 // ============================================================
@@ -1713,14 +1715,18 @@ function analysisViewSondes(){
   // quines sondes estan actives a la vista principal) + totes les sondes
   // ambient actives a la vista principal, per poder-les comparar -- amb
   // els mateixos colors que ja es veuen al lateral (allSondaColors),
-  // perquè sigui coherent amb la resta de l'eina.
+  // perquè sigui coherent amb la resta de l'eina. Una sonda ambient es
+  // pot amagar nomes a la vista d'anàlisi (analysisHiddenAmbientIds)
+  // sense desactivar-la al perfil principal.
   if(!INCENDI) return [];
   const out = [];
   const columna = INCENDI.sondes.find(s => s.sond_id === analysisColumnaId);
   if(columna) out.push({ s: columna, color: allSondaColors[columna.sond_id] || tipusColor('columna', 0), dash: [] });
   let ambientIdx = 0;
   INCENDI.sondes.filter(s => s.tipus === 'ambient' && activeIds.has(s.sond_id)).forEach(s => {
-    out.push({ s, color: allSondaColors[s.sond_id] || tipusColor('ambient', ambientIdx), dash: DASH[ambientIdx % DASH.length] });
+    if(!analysisHiddenAmbientIds.has(s.sond_id)){
+      out.push({ s, color: allSondaColors[s.sond_id] || tipusColor('ambient', ambientIdx), dash: DASH[ambientIdx % DASH.length] });
+    }
     ambientIdx++;
   });
   return out;
@@ -2114,10 +2120,10 @@ function computeMeasuredPlumeTop(s, baseline){
   // no trenqui la baixada en molts candidats successius); el criteri que
   // de debò decideix si és una estabilització real és la mitjana de la
   // finestra, més avall.
-  const pointThreshold = baseline + 0.3;
+  const pointThreshold = baseline + 0.5;
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
   const windowM = 200; // finestra per confirmar l'estabilitzacio
-  const maxWindowMean = baseline + 0.3; // la mitjana de la finestra no pot superar el baseline en mes de 0.3 m/s
+  const maxWindowMean = baseline + 0.5; // la mitjana de la finestra no pot superar el baseline en mes de 0.5 m/s
 
   let peakIdx = 0;
   for(let i = 1; i < smoothed.length; i++){
@@ -2578,6 +2584,7 @@ function makeWindChart(extraTopPadding, opts){
   const canvasId = opts.canvasId || 'chartWind';
   const sondesFn = opts.sondesFn || activeSondes;
   const overlays = !!opts.overlays;
+  const showYAxis = !!opts.showYAxis;
   const sondes = sondesFn();
   const xMin = axisMax.wind.min;
   const xMax = axisMax.wind.max;
@@ -2612,7 +2619,7 @@ function makeWindChart(extraTopPadding, opts){
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
       scales:{
         x:{ type:'linear', min:xMin, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
-        y:{ type:'linear', min:yMin, max:yMax, ticks:{display:false}, grid:{color:'#e5e5e5'} }
+        y:{ type:'linear', min:yMin, max:yMax, title:{display: showYAxis, text:t('chart.heightAxis'), color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: showYAxis, font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins:{ legend:{ display:false }, tooltip: tooltipCallbacks('m/s', 1) }
     }
@@ -3856,10 +3863,36 @@ function populateAnalysisColumnaSelect(){
     || `<option value="">${t('analysis.noColumnaSondes')}</option>`;
 }
 
+function populateAnalysisAmbientToggles(){
+  // Una casella per cada sonda ambient activa al perfil principal, per
+  // poder-la amagar només a la vista d'anàlisi (sense desactivar-la al
+  // perfil) -- útil quan n'hi ha més d'una i només interessa comparar
+  // amb algunes.
+  const container = document.getElementById('analysisAmbientToggles');
+  if(!container || !INCENDI) return;
+  const ambientActive = INCENDI.sondes.filter(s => s.tipus === 'ambient' && activeIds.has(s.sond_id));
+  container.innerHTML = ambientActive.map(s => {
+    const checked = !analysisHiddenAmbientIds.has(s.sond_id);
+    return `<label style="display:flex; align-items:center; gap:4px; font-family:var(--font-mono); font-size:11px; color:var(--text-dim); cursor:pointer;">
+      <input type="checkbox" class="analysis-ambient-toggle" data-sond-id="${s.sond_id}" ${checked ? 'checked' : ''}>
+      ${sondaLabel(s.sond_id)}
+    </label>`;
+  }).join('');
+  container.querySelectorAll('.analysis-ambient-toggle').forEach(cb => {
+    cb.addEventListener('change', function(){
+      const id = this.dataset.sondId;
+      if(this.checked) analysisHiddenAmbientIds.delete(id);
+      else analysisHiddenAmbientIds.add(id);
+      renderAnalysisView();
+    });
+  });
+}
+
 function renderAnalysisView(){
   destroyAnalysisCharts();
   document.getElementById('analysisIncendiName').textContent = INCENDI.incendi || '—';
   populateAnalysisColumnaSelect();
+  populateAnalysisAmbientToggles();
 
   const sondesFn = analysisViewSondes;
   let othersBuilt = false;
@@ -3870,7 +3903,7 @@ function renderAnalysisView(){
     analysisCharts.rh = makeMultiChart('analysisChartRh', 'rh_pct', t('chart.rhAxis'), 'rh', '%', 0, topPad, null, { sondesFn, overlays:true });
     analysisCharts.wind = makeWindChart(topPad, { canvasId:'analysisChartWind', sondesFn, overlays:true });
     analysisCharts.rise = makeMultiChart('analysisChartRise', 'rise_speed_ms', 'm/s', 'rise', 'm/s', 1, topPad, null, { sondesFn, overlays:true });
-  }, { sondesFn, overlays:true });
+  }, { sondesFn, overlays:true, showYAxis:true });
 
   renderAnalysisViewPanel();
 }
