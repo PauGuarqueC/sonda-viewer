@@ -1905,6 +1905,33 @@ function tdFromMixingRatio(w, pressureMb){
   return (243.5 * lnE) / (17.67 - lnE);
 }
 
+function surfaceRefPoint(sorted){
+  // Punt de referència de "superfície" per inicialitzar les parcel·les
+  // (S/ML/MU). Quan una sonda de columna es llança a mà molt a prop del
+  // cap de l'incendi, la primera lectura pot quedar contaminada per
+  // l'escalfor directa de la flama en el moment de l'enlairament -- un
+  // salt de temperatura físicament impossible en només uns pocs metres
+  // (molt per sobre, fins i tot, del gradient sec ~9.8 K/km), no
+  // representatiu de l'aire que realment alimenta la columna. Es
+  // descarten aquests primers punts contaminats -- mentre el gradient
+  // cap al punt següent segueixi sent irrealment fort -- i s'agafa com a
+  // referència el primer punt on el perfil ja es comporta de forma
+  // físicament raonable. Un marge ampli (50 K/km) evita descartar res en
+  // el cas normal, sense contaminació.
+  const MAX_REASONABLE_LAPSE_K_PER_M = 0.05; // 50 K/km
+  const MAX_SKIP_M = 150; // no descartem mai més enllà de 150m sobre el llançament
+  let idx = 0;
+  while(idx < sorted.length - 1){
+    const a = sorted[idx], b = sorted[idx + 1];
+    const dz = b.alt_msl_m - a.alt_msl_m;
+    if(dz <= 0 || b.alt_msl_m - sorted[0].alt_msl_m > MAX_SKIP_M) break;
+    const lapse = (a.temp_c - b.temp_c) / dz; // positiu si refreda en pujar
+    if(lapse > MAX_REASONABLE_LAPSE_K_PER_M) idx++;
+    else break;
+  }
+  return sorted[idx];
+}
+
 function meanLayerState(s, layerHpa){
   // valors mitjans (theta i raó de mescla) de la capa inferior del
   // sondeig (per defecte els 150hPa de sota, com el parcel ML de l'
@@ -1918,8 +1945,8 @@ function meanLayerState(s, layerHpa){
     .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null && p.theta_v_k != null)
     .sort((a, b) => b.pressure_mb - a.pressure_mb);
   if(!sorted.length) return null;
-  const sfc = sorted[0];
-  const layer = sorted.filter(p => sfc.pressure_mb - p.pressure_mb <= layerHpa);
+  const sfc = surfaceRefPoint(sorted);
+  const layer = sorted.filter(p => sfc.pressure_mb - p.pressure_mb <= layerHpa && p.alt_msl_m >= sfc.alt_msl_m);
   const withRh = layer.filter(p => p.rh_pct != null && p.rh_pct > 0);
   if(!withRh.length) return null;
 
@@ -1964,7 +1991,9 @@ function parcelInitState(s, kind){
     .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null && p.theta_v_k != null)
     .sort((a, b) => b.pressure_mb - a.pressure_mb);
   if(!sorted.length) return null;
-  const sfc = sorted[0];
+  // sfc: punt de referència de "superfície" ja net de contaminació de
+  // llançament (vegeu surfaceRefPoint) -- les tres parcel·les hi parteixen.
+  const sfc = surfaceRefPoint(sorted);
 
   if(kind === 's'){
     // +3K d'escalfament (Luderer et al. 2009 / Potter 2005) no canvia la
@@ -1977,7 +2006,7 @@ function parcelInitState(s, kind){
     return layer ? { pMb: layer.pMb, altMsl: layer.altMsl, tC: layer.tC, w: layer.w } : null;
   }
   if(kind === 'mu'){
-    const layer = sorted.filter(p => sfc.pressure_mb - p.pressure_mb <= 150);
+    const layer = sorted.filter(p => sfc.pressure_mb - p.pressure_mb <= 150 && p.alt_msl_m >= sfc.alt_msl_m);
     let best = null, bestTheta = -Infinity;
     layer.forEach(p => {
       const theta = (p.temp_c + 273.15) * Math.pow(1000 / p.pressure_mb, 0.286);
@@ -2085,10 +2114,12 @@ function computeMeasuredPlumeTop(s, baseline){
   if(raw.length < 5) return null;
   // El marge sobre el baseline ha de ser prou estret perquè "per sota del
   // llindar" vulgui dir realment "a prop de l'ambient" -- un marge massa
-  // ample (p.ex. +50%) deixava que una caiguda transitòria que mai
-  // s'acostava de veritat al baseline es confongués amb l'estabilització
-  // real.
-  const threshold = baseline + Math.max(0.5, baseline * 0.25);
+  // ample (p.ex. +50%, o fins i tot +25%) deixava que un punt encara
+  // clarament per sobre de l'ambient real (~2 m/s, valor fix de
+  // l'article) es marqués com si ja hi hagués tornat. El baseline és
+  // sempre 2.0 m/s (ambientRiseSpeedBaseline), així que el marge ja no
+  // cal que escali amb ell -- es deixa fix i estret (+0,3 m/s).
+  const threshold = baseline + 0.3;
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
   const persistMinM = 200; // distancia minima (m) per considerar real una pujada o una baixada
 
