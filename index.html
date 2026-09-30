@@ -280,8 +280,7 @@
       </div>
 
       <div class="sidebar-note" style="border-top:1px solid var(--panel-border); margin-top:14px; padding-top:12px;">
-        <div style="font-weight:500; color:var(--text); margin-bottom:6px;" data-i18n="sidebar.analysisTitle">Anàlisi</div>
-        <div id="analysisPanel"></div>
+        <button type="button" id="openAnalysisBtn" class="toggle-btn" style="width:100%; text-align:center;" data-i18n="sidebar.openAnalysis">Anàlisi →</button>
       </div>
     </div>
 
@@ -393,6 +392,49 @@
   </div>
 </div>
 
+<!-- ================= VISTA: anàlisi ================= -->
+<div class="view" id="view-analysis">
+  <div class="incendi-header">
+    <h2 data-i18n-html="analysis.viewHeaderTitle">Anàlisi — <span id="analysisIncendiName">—</span></h2>
+    <span class="sub" data-i18n="analysis.viewHeaderSub">ABL, LCL i parcel·les S/ML/MU sobre la sonda de columna seleccionada</span>
+    <a href="#" id="analysisBackLink" data-i18n="analysis.backToIncendi">← torna al perfil</a>
+  </div>
+
+  <div id="analysisMain" style="display:flex; gap:18px; padding:16px 22px; align-items:flex-start; flex-wrap:wrap;">
+    <div style="flex:1; min-width:0;">
+      <div class="section-title" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <label style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-dim); display:flex; align-items:center; gap:6px;">
+          <span data-i18n="analysis.columnaSelectLabel">Sonda de columna:</span>
+          <select id="analysisColumnaSelect" style="padding:3px 6px; border:1px solid var(--panel-border); border-radius:4px; font-family:var(--font-mono); font-size:11.5px;"></select>
+        </label>
+        <span class="hint" data-i18n="analysis.ambientHint">+ sondes ambient actives al perfil, per comparar</span>
+      </div>
+      <div class="profile-strip">
+        <div class="block">
+          <h4 data-i18n="chart.thetaTitle">θᵥ potencial virtual (K)</h4>
+          <div class="chart-h"><canvas id="analysisChartTheta"></canvas></div>
+        </div>
+        <div class="block">
+          <h4 data-i18n="chart.rhTitle">Humitat relativa (%)</h4>
+          <div class="chart-h"><canvas id="analysisChartRh"></canvas></div>
+        </div>
+        <div class="block">
+          <h4 data-i18n="chart.windTitle">Vent — velocitat i direcció</h4>
+          <div class="chart-h"><canvas id="analysisChartWind"></canvas></div>
+        </div>
+        <div class="block">
+          <h4 data-i18n="chart.riseTitle">Velocitat d'ascens (m/s)</h4>
+          <div class="chart-h"><canvas id="analysisChartRise"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div style="width:280px; flex-shrink:0;">
+      <div style="font-weight:500; color:var(--text); margin-bottom:8px; font-size:13px;" data-i18n="sidebar.analysisTitle">Anàlisi</div>
+      <div id="analysisViewPanel"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ================= VISTA: pujar sonda ================= -->
 <div class="view" id="view-upload">
   <div class="wrap">
@@ -461,16 +503,21 @@ const I18N = {
     'sidebar.colorNote': 'Ambient en tons blau-verdosos, columna en tons vermell-taronjats. Amb més d\'una sonda activa del mateix tipus, cada una porta un to diferent.',
     'sidebar.modelProfiles': 'Perfils de model',
     'sidebar.analysisTitle': 'Anàlisi',
-    'analysis.empty': 'Marca una sonda per veure\'n l\'anàlisi.',
+    'sidebar.openAnalysis': 'Anàlisi →',
+    'analysis.empty': 'Tria una sonda de columna per veure\'n l\'anàlisi.',
     'analysis.ablAmbient': 'ABL',
     'analysis.ablFire': 'fireABL',
     'analysis.lclMean': 'LCL (mitjana capa)',
     'analysis.plumeTop': 'top mesurat (vel. ascens)',
     'analysis.parcels': 'parcel·les (alçada potencial)',
+    'analysis.noBuoyancy': 'sense ascens',
     'analysis.none': '—',
-    'analysis.allOff': 'L\'anàlisi està desactivada per a totes les sondes actives.',
-    'sonda.analysisToggle': 'anàlisi',
-    'sonda.analysisToggleTitle': 'Mostra o amaga les línies d\'anàlisi (ABL, LCL, parcel·les, cisallament, top) d\'aquesta sonda als gràfics i al lateral',
+    'analysis.viewHeaderTitle': 'Anàlisi — <span id="analysisIncendiName">—</span>',
+    'analysis.viewHeaderSub': 'ABL, LCL i parcel·les S/ML/MU sobre la sonda de columna seleccionada',
+    'analysis.backToIncendi': '← torna al perfil',
+    'analysis.columnaSelectLabel': 'Sonda de columna:',
+    'analysis.ambientHint': '+ sondes ambient actives al perfil, per comparar',
+    'analysis.noColumnaSondes': 'cap sonda de columna en aquest incendi',
     'profile.title': 'Perfil vertical',
     'profile.hint': 'eix d\'alçada compartit entre panells i sondes',
     'common.downloadImage': 'Descarrega imatge',
@@ -607,16 +654,21 @@ const I18N = {
     'sidebar.colorNote': 'Ambient in blue-green tones, column in red-orange tones. With more than one active sonde of the same type, each one gets a different shade.',
     'sidebar.modelProfiles': 'Model profiles',
     'sidebar.analysisTitle': 'Analysis',
-    'analysis.empty': 'Check a sonde to see its analysis.',
+    'sidebar.openAnalysis': 'Analysis →',
+    'analysis.empty': 'Pick a column sonde to see its analysis.',
     'analysis.ablAmbient': 'ABL',
     'analysis.ablFire': 'fireABL',
     'analysis.lclMean': 'LCL (layer mean)',
     'analysis.plumeTop': 'measured top (rise speed)',
     'analysis.parcels': 'parcels (potential height)',
+    'analysis.noBuoyancy': 'no lift',
     'analysis.none': '—',
-    'analysis.allOff': 'Analysis is turned off for all active sondes.',
-    'sonda.analysisToggle': 'analysis',
-    'sonda.analysisToggleTitle': 'Show or hide this sonde\'s analysis lines (ABL, LCL, parcels, shear, top) on the charts and sidebar',
+    'analysis.viewHeaderTitle': 'Analysis — <span id="analysisIncendiName">—</span>',
+    'analysis.viewHeaderSub': 'ABL, LCL and S/ML/MU parcels over the selected column sonde',
+    'analysis.backToIncendi': '← back to profile',
+    'analysis.columnaSelectLabel': 'Column sonde:',
+    'analysis.ambientHint': '+ active ambient sondes from the profile, for comparison',
+    'analysis.noColumnaSondes': 'no column sondes in this wildfire',
     'profile.title': 'Vertical profile',
     'profile.hint': 'height axis shared between panels and sondes',
     'common.downloadImage': 'Download image',
@@ -783,13 +835,14 @@ const WORKER_URL = "https://sonda-upload-proxy.pguarque.workers.dev";
 const views = {
   list: document.getElementById('view-list'),
   incendi: document.getElementById('view-incendi'),
+  analysis: document.getElementById('view-analysis'),
   upload: document.getElementById('view-upload'),
 };
 
 function showView(name){
   Object.values(views).forEach(v => v.classList.remove('active'));
   views[name].classList.add('active');
-  document.getElementById('navList').classList.toggle('active', name === 'list' || name === 'incendi');
+  document.getElementById('navList').classList.toggle('active', name === 'list' || name === 'incendi' || name === 'analysis');
   document.getElementById('navUpload').classList.toggle('active', name === 'upload');
 }
 
@@ -1006,7 +1059,7 @@ document.getElementById('toggleMapView').addEventListener('click', () => {
 let INCENDI = null;
 let currentSlug = null;
 let activeIds = new Set();
-let analysisOffIds = new Set(); // sondes actives amb l'anàlisi (ABL/LCL/parcel·les/etc.) desactivada -- per defecte totes la tenen activada
+let analysisColumnaId = null; // sond_id de la sonda de columna seleccionada a la vista d'anàlisi (independent de activeIds)
 const MAX_ACTIVE_SONDES = 4; // com a màxim 4 sondes dibuixades alhora als gràfics
 
 // ============================================================
@@ -1401,10 +1454,6 @@ function buildSidebar(){
       <span class="elev-edit-wrap" style="display:flex; align-items:center; gap:3px;" title="${t('sonda.elevTitle')}">
         <input type="number" class="elev-edit" data-sond-id="${s.sond_id}" value="${elev != null ? elev : ''}" style="width:58px; padding:1px 3px; border:1px solid var(--panel-border); border-radius:3px; font-family:var(--font-mono); font-size:10.5px;">m
       </span>
-      <label class="analysis-toggle-wrap" style="display:flex; align-items:center; gap:3px; cursor:pointer; margin-left:auto;" title="${t('sonda.analysisToggleTitle')}">
-        <input type="checkbox" class="analysis-toggle" data-sond-id="${s.sond_id}" ${!analysisOffIds.has(s.sond_id) ? 'checked' : ''}>
-        <span>${t('sonda.analysisToggle')}</span>
-      </label>
     </div>`;
   }).join('');
   list.querySelectorAll('input[type=checkbox]').forEach(cb => {
@@ -1448,13 +1497,6 @@ function buildSidebar(){
   list.querySelectorAll('.elev-edit').forEach(inp => {
     inp.addEventListener('keydown', e => { if(e.key === 'Enter') inp.blur(); });
     inp.addEventListener('change', () => editSondaElevation(inp.dataset.sondId, inp.value, inp));
-  });
-  list.querySelectorAll('.analysis-toggle').forEach(cb => {
-    cb.addEventListener('change', () => {
-      const id = cb.dataset.sondId;
-      if(cb.checked) analysisOffIds.delete(id); else analysisOffIds.add(id);
-      renderAllCharts();
-    });
   });
   populateSkewTSelectors();
 }
@@ -1622,12 +1664,29 @@ function activeSondes(){
     });
 }
 
-function analysisSondes(){
-  // les sondes actives que a mes tenen l'anàlisi activada (vegeu el
-  // commutador "anàlisi" de cada sonda al lateral) -- les que la tenen
-  // desactivada segueixen dibuixant-se als gràfics igual, nomes no hi
-  // aporten cap línia de referència ni entrada al panell lateral.
-  return activeSondes().filter(({s}) => !analysisOffIds.has(s.sond_id));
+function columnaSondes(){
+  // totes les sondes de tipus "columna" de l'incendi actual, actives o
+  // no -- per poder-les triar totes al desplegable de la vista d'anàlisi,
+  // no nomes les que ja estaven marcades a la vista principal.
+  return INCENDI ? INCENDI.sondes.filter(s => s.tipus === 'columna') : [];
+}
+
+function analysisViewSondes(){
+  // La sonda de columna seleccionada a la vista d'anàlisi (independent de
+  // quines sondes estan actives a la vista principal) + totes les sondes
+  // ambient actives a la vista principal, per poder-les comparar -- amb
+  // els mateixos colors que ja es veuen al lateral (allSondaColors),
+  // perquè sigui coherent amb la resta de l'eina.
+  if(!INCENDI) return [];
+  const out = [];
+  const columna = INCENDI.sondes.find(s => s.sond_id === analysisColumnaId);
+  if(columna) out.push({ s: columna, color: allSondaColors[columna.sond_id] || tipusColor('columna', 0), dash: [] });
+  let ambientIdx = 0;
+  INCENDI.sondes.filter(s => s.tipus === 'ambient' && activeIds.has(s.sond_id)).forEach(s => {
+    out.push({ s, color: allSondaColors[s.sond_id] || tipusColor('ambient', ambientIdx), dash: DASH[ambientIdx % DASH.length] });
+    ambientIdx++;
+  });
+  return out;
 }
 
 function destroyCharts(){
@@ -1848,11 +1907,19 @@ function parcelAscentPath(s, kind){
     .sort((a, b) => b.pressure_mb - a.pressure_mb);
   if(!env.length) return null;
 
-  let prevDiff = null, prevPt = null, topAltMsl = null;
+  let prevDiff = null, prevPt = null, topAltMsl = null, noBuoyancy = false;
   for(const p of env){
     const tParcelAtP = thetaK * Math.pow(p.pressure_mb / 1000, 0.286) - 273.15;
     const diff = tParcelAtP - p.temp_c;
-    if(prevDiff == null && diff < 0){ topAltMsl = p.alt_msl_m; break; } // sense flotabilitat ja des de l'inici
+    if(prevDiff == null && diff < 0){
+      // sense flotabilitat ja des de l'inici -- p.ex. la ML surt mes freda
+      // que la pròpia superfície mesurada (capa gairebé superadiabàtica):
+      // resultat físic legítim, no un error de càlcul, però cal marcar-ho
+      // perquè qui ho llegeixi no ho confongui amb "sense dades".
+      topAltMsl = p.alt_msl_m;
+      noBuoyancy = true;
+      break;
+    }
     if(prevDiff != null && prevDiff >= 0 && diff < 0){
       const frac = prevDiff / (prevDiff - diff);
       topAltMsl = prevPt.alt_msl_m + frac * (p.alt_msl_m - prevPt.alt_msl_m);
@@ -1861,7 +1928,7 @@ function parcelAscentPath(s, kind){
     prevDiff = diff; prevPt = p;
   }
   // topAltMsl es null si no creua l'ambient dins el rang mesurat
-  return { thetaK, sfcAltMsl: init.altMsl, topAltMsl };
+  return { thetaK, sfcAltMsl: init.altMsl, topAltMsl, noBuoyancy };
 }
 
 function potentialPlumeTop(s, kind){
@@ -1869,12 +1936,12 @@ function potentialPlumeTop(s, kind){
   return path ? path.topAltMsl : null;
 }
 
-function ambientRiseSpeedBaseline(){
+function ambientRiseSpeedBaseline(sondes){
   // velocitat d'ascens esperada d'una sonda sense influència de la ploma
-  // (Castellnou et al. 2025): mediana de totes les sondes ambient actives
+  // (Castellnou et al. 2025): mediana de totes les sondes ambient donades
   // si n'hi ha, si no el valor teòric ~2 m/s citat a l'article.
   const ambientVals = [];
-  analysisSondes().forEach(({s}) => {
+  (sondes || []).forEach(({s}) => {
     if(s.tipus !== 'ambient') return;
     (s.profile || []).forEach(p => { if(p.rise_speed_ms != null) ambientVals.push(p.rise_speed_ms); });
   });
@@ -1898,13 +1965,13 @@ function computeMeasuredPlumeTop(s, baseline){
   return topAlt;
 }
 
-function computeParcelSegmentsForActiveSondes(){
+function computeParcelSegmentsFor(sondesFn){
   const segs = [];
-  analysisSondes().forEach(({s, color}) => {
+  sondesFn().forEach(({s, color}) => {
     ['s', 'ml', 'mu'].forEach(kind => {
       const path = parcelAscentPath(s, kind);
       if(path && path.topAltMsl != null){
-        segs.push({ thetaK: path.thetaK, sfcAltMsl: path.sfcAltMsl, topAltMsl: path.topAltMsl, color, label: kind.toUpperCase() });
+        segs.push({ thetaK: path.thetaK, sfcAltMsl: path.sfcAltMsl, topAltMsl: path.topAltMsl, noBuoyancy: path.noBuoyancy, color, label: kind.toUpperCase() });
       }
     });
   });
@@ -1925,10 +1992,36 @@ function parcelAscentPlugin(getSegments){
       getSegments().forEach(seg => {
         if(seg.thetaK == null || seg.topAltMsl == null) return;
         if(seg.thetaK < xScale.min || seg.thetaK > xScale.max) return;
+        const x = xScale.getPixelForValue(seg.thetaK);
+
+        if(seg.noBuoyancy){
+          // Sense flotabilitat des de l'inici (p.ex. ML mes freda que la
+          // pròpia superfície mesurada): el segment tindria alçada zero i
+          // no es veuria, així que es marca amb una creueta a la
+          // superfície en lloc de no dibuixar res -- perquè es vegi que
+          // la parcel·la s'ha calculat però no puja gens.
+          if(seg.sfcAltMsl < yScale.min || seg.sfcAltMsl > yScale.max) return;
+          const yPix = yScale.getPixelForValue(seg.sfcAltMsl);
+          ctx.save();
+          ctx.strokeStyle = seg.color;
+          ctx.lineWidth = 1.3;
+          ctx.beginPath();
+          ctx.moveTo(x - 4, yPix - 4); ctx.lineTo(x + 4, yPix + 4);
+          ctx.moveTo(x + 4, yPix - 4); ctx.lineTo(x - 4, yPix + 4);
+          ctx.stroke();
+          if(seg.label){
+            ctx.font = '8px "Roboto Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = seg.color;
+            ctx.fillText(seg.label, x, yPix - 7);
+          }
+          ctx.restore();
+          return;
+        }
+
         const yTop = Math.max(yScale.min, Math.min(seg.topAltMsl, yScale.max));
         const yBottom = Math.max(yScale.min, Math.min(seg.sfcAltMsl, yScale.max));
         if(yTop <= yBottom) return;
-        const x = xScale.getPixelForValue(seg.thetaK);
         const yPixTop = yScale.getPixelForValue(yTop);
         const yPixBottom = yScale.getPixelForValue(yBottom);
 
@@ -2010,13 +2103,14 @@ function horizontalRefLinesPlugin(getLines){
   };
 }
 
-function computeRefLinesForActiveSondes(extra){
+function computeRefLinesFor(sondesFn, extra){
   // extra: 'plumetop' (nomes al gràfic d'ascens) -- els altres gràfics
   // nomes hi mostren ABLh/LCL. Les parcel·les es dibuixen a part com a
   // segments verticals (vegeu parcelAscentPlugin), nomes al gràfic de θᵥ.
+  const sondes = sondesFn();
   const lines = [];
-  const baseline = extra === 'plumetop' ? ambientRiseSpeedBaseline() : null;
-  analysisSondes().forEach(({s, color}) => {
+  const baseline = extra === 'plumetop' ? ambientRiseSpeedBaseline(sondes) : null;
+  sondes.forEach(({s, color}) => {
     const ablh = computeABLh(s);
     const lcl = computeLCL(s);
     if(ablh != null) lines.push({ value: ablh, color, label: 'ABLh' });
@@ -2058,12 +2152,16 @@ function verticalRefLinePlugin(xValue, label, color){
   };
 }
 
-function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraTopPadding, afterLayoutCallback){
+function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraTopPadding, afterLayoutCallback, opts){
+  opts = opts || {};
+  const sondesFn = opts.sondesFn || activeSondes;
+  const overlays = !!opts.overlays;
+  const showYAxis = opts.showYAxis != null ? opts.showYAxis : canvasId==='chartTheta';
   const xMin = axisMax[axisKey].min;
   const xMax = axisMax[axisKey].max;
   const yMin = axisMax.height.min;
   const yMax = axisMax.height.max;
-  const datasets = activeSondes().map(({s, color, dash}) => ({
+  const datasets = sondesFn().map(({s, color, dash}) => ({
     label: s.sond_id,
     data: s.profile.filter(p => p[field] != null).map(p => ({x: p[field], y: p.alt_msl_m})),
     borderColor: color, backgroundColor: 'transparent',
@@ -2086,16 +2184,16 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraT
     data: { datasets },
     plugins: [
       ...(axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : []),
-      ...(axisKey === 'theta' ? [parcelAscentPlugin(computeParcelSegmentsForActiveSondes)] : []),
-      horizontalRefLinesPlugin(() => computeRefLinesForActiveSondes(axisKey === 'rise' ? 'plumetop' : undefined)),
+      ...(overlays && axisKey === 'theta' ? [parcelAscentPlugin(() => computeParcelSegmentsFor(sondesFn))] : []),
+      ...(overlays ? [horizontalRefLinesPlugin(() => computeRefLinesFor(sondesFn, axisKey === 'rise' ? 'plumetop' : undefined))] : []),
       { id: 'syncPlugin_'+canvasId, afterLayout(chart){ syncMiniSliderToChart(chart); if(afterLayoutCallback) afterLayoutCallback(chart); } }
     ],
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
-      layout: { padding: { top: extraTopPadding || 0, right: 34 } }, // marge per les fletxes d'anàlisi al marge dret
+      layout: { padding: { top: extraTopPadding || 0, right: overlays ? 34 : 6 } }, // marge per les fletxes d'anàlisi al marge dret, nomes quan hi ha overlays
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
-        y: { type:'linear', min:yMin, max:yMax, title:{display: canvasId==='chartTheta', text:t('chart.heightAxis'), color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
+        y: { type:'linear', min:yMin, max:yMax, title:{display: showYAxis, text:t('chart.heightAxis'), color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: showYAxis, font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
       },
       plugins: { legend: { display:false }, tooltip: tooltipCallbacks(unit, decimals) }
     }
@@ -2172,8 +2270,12 @@ const windBarbsPlugin = {
   }
 };
 
-function makeWindChart(extraTopPadding){
-  const sondes = activeSondes();
+function makeWindChart(extraTopPadding, opts){
+  opts = opts || {};
+  const canvasId = opts.canvasId || 'chartWind';
+  const sondesFn = opts.sondesFn || activeSondes;
+  const overlays = !!opts.overlays;
+  const sondes = sondesFn();
   const xMin = axisMax.wind.min;
   const xMax = axisMax.wind.max;
   const yMin = axisMax.height.min;
@@ -2196,14 +2298,14 @@ function makeWindChart(extraTopPadding){
     });
   });
 
-  const ctx = document.getElementById('chartWind').getContext('2d');
+  const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {
     type:'line',
     data:{ datasets },
-    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(computeRefLinesForActiveSondes), { id: 'syncPlugin_chartWind', afterLayout(chart){ syncMiniSliderToChart(chart); } }],
+    plugins: [windBarbsPlugin, ...(overlays ? [horizontalRefLinesPlugin(() => computeRefLinesFor(sondesFn))] : []), { id: 'syncPlugin_'+canvasId, afterLayout(chart){ syncMiniSliderToChart(chart); } }],
     options:{
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
-      layout: { padding: { top: extraTopPadding || 0, right: 34 } },
+      layout: { padding: { top: extraTopPadding || 0, right: overlays ? 34 : 6 } },
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
       scales:{
         x:{ type:'linear', min:xMin, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
@@ -3352,30 +3454,39 @@ function renderAllCharts(){
   });
   renderSkewT();
   renderDrift();
-  renderAnalysisPanel();
 }
 
 function fmtM(v){
   return v == null ? t('analysis.none') : `${Math.round(v)} m`;
 }
 
-function renderAnalysisPanel(){
-  const panel = document.getElementById('analysisPanel');
+function fmtParcel(path){
+  // Com fmtM, però distingeix "sense dades" de "sense flotabilitat des de
+  // l'inici" (parcelAscentPath -> noBuoyancy) -- si no, una parcel·la
+  // legítimament sense empenta (p.ex. ML en capa quasi superadiabàtica)
+  // es mostra com si tingués la mateixa alçada que la superfície, sense
+  // cap indicació de què vol dir.
+  if(!path || path.topAltMsl == null) return t('analysis.none');
+  if(path.noBuoyancy) return t('analysis.noBuoyancy');
+  return `${Math.round(path.topAltMsl)} m`;
+}
+
+function renderAnalysisViewPanel(){
+  const panel = document.getElementById('analysisViewPanel');
   if(!panel) return;
-  const sondes = analysisSondes();
+  const sondes = analysisViewSondes();
   if(!sondes.length){
-    const msg = activeSondes().length ? t('analysis.allOff') : t('analysis.empty');
-    panel.innerHTML = `<div class="analysis-empty">${msg}</div>`;
+    panel.innerHTML = `<div class="analysis-empty">${t('analysis.empty')}</div>`;
     return;
   }
-  const baseline = ambientRiseSpeedBaseline();
+  const baseline = ambientRiseSpeedBaseline(sondes);
 
   panel.innerHTML = sondes.map(({s, color}) => {
     const abl = computeABLh(s);
     const lclMean = computeLCL_ML(s);
-    const parcelS = potentialPlumeTop(s, 's');
-    const parcelML = potentialPlumeTop(s, 'ml');
-    const parcelMU = potentialPlumeTop(s, 'mu');
+    const parcelS = parcelAscentPath(s, 's');
+    const parcelML = parcelAscentPath(s, 'ml');
+    const parcelMU = parcelAscentPath(s, 'mu');
     const ablLabel = s.tipus === 'columna' ? t('analysis.ablFire') : t('analysis.ablAmbient');
 
     const rows = [
@@ -3385,7 +3496,7 @@ function renderAnalysisPanel(){
     if(s.tipus === 'columna'){
       rows.push([t('analysis.plumeTop'), fmtM(computeMeasuredPlumeTop(s, baseline))]);
     }
-    rows.push([t('analysis.parcels'), `S ${fmtM(parcelS)} · ML ${fmtM(parcelML)} · MU ${fmtM(parcelMU)}`]);
+    rows.push([t('analysis.parcels'), `S ${fmtParcel(parcelS)} · ML ${fmtParcel(parcelML)} · MU ${fmtParcel(parcelMU)}`]);
 
     return `<div class="analysis-card">
       <div class="a-head"><span class="swatch" style="background:${color}"></span><span>${sondaLabel(s.sond_id)}</span></div>
@@ -3393,6 +3504,70 @@ function renderAnalysisPanel(){
     </div>`;
   }).join('');
 }
+
+// ============================================================
+// VISTA: anàlisi (separada de la vista principal -- vegeu
+// openAnalysisView/renderAnalysisView; nomes hi entren la sonda de
+// columna seleccionada i les sondes ambient actives a la vista
+// principal, amb els overlays d'ABLh/LCL/parcel·les activats)
+// ============================================================
+let analysisCharts = {};
+
+function destroyAnalysisCharts(){
+  Object.values(analysisCharts).forEach(c => c && c.destroy());
+  analysisCharts = {};
+}
+
+function populateAnalysisColumnaSelect(){
+  const sel = document.getElementById('analysisColumnaSelect');
+  if(!sel) return;
+  const opts = columnaSondes();
+  if(!opts.some(s => s.sond_id === analysisColumnaId)){
+    analysisColumnaId = opts.length ? opts[0].sond_id : null;
+  }
+  sel.innerHTML = opts.map(s => `<option value="${s.sond_id}" ${s.sond_id===analysisColumnaId?'selected':''}>${sondaLabel(s.sond_id)}</option>`).join('')
+    || `<option value="">${t('analysis.noColumnaSondes')}</option>`;
+}
+
+function renderAnalysisView(){
+  destroyAnalysisCharts();
+  document.getElementById('analysisIncendiName').textContent = INCENDI.incendi || '—';
+  populateAnalysisColumnaSelect();
+
+  const sondesFn = analysisViewSondes;
+  let othersBuilt = false;
+  analysisCharts.theta = makeMultiChart('analysisChartTheta', 'theta_v_k', t('chart.thetaAxis'), 'theta', 'K', 1, 0, (chart) => {
+    if(othersBuilt) return;
+    othersBuilt = true;
+    const topPad = chart.chartArea.top;
+    analysisCharts.rh = makeMultiChart('analysisChartRh', 'rh_pct', t('chart.rhAxis'), 'rh', '%', 0, topPad, null, { sondesFn, overlays:true });
+    analysisCharts.wind = makeWindChart(topPad, { canvasId:'analysisChartWind', sondesFn, overlays:true });
+    analysisCharts.rise = makeMultiChart('analysisChartRise', 'rise_speed_ms', 'm/s', 'rise', 'm/s', 1, topPad, null, { sondesFn, overlays:true });
+  }, { sondesFn, overlays:true });
+
+  renderAnalysisViewPanel();
+}
+
+function openAnalysisView(){
+  if(!INCENDI) return;
+  if(!analysisColumnaId || !columnaSondes().some(s => s.sond_id === analysisColumnaId)){
+    const active = columnaSondes().find(s => activeIds.has(s.sond_id));
+    analysisColumnaId = active ? active.sond_id : (columnaSondes()[0] ? columnaSondes()[0].sond_id : null);
+  }
+  showView('analysis');
+  renderAnalysisView();
+}
+
+document.getElementById('openAnalysisBtn').addEventListener('click', openAnalysisView);
+document.getElementById('analysisColumnaSelect').addEventListener('change', function(){
+  analysisColumnaId = this.value || null;
+  renderAnalysisView();
+});
+document.getElementById('analysisBackLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  showView('incendi');
+  renderAllCharts();
+});
 
 // ============================================================
 // VISTA: pujar sonda
