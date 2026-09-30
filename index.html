@@ -468,6 +468,9 @@ const I18N = {
     'analysis.plumeTop': 'top mesurat (vel. ascens)',
     'analysis.parcels': 'parcel·les (alçada potencial)',
     'analysis.none': '—',
+    'analysis.allOff': 'L\'anàlisi està desactivada per a totes les sondes actives.',
+    'sonda.analysisToggle': 'anàlisi',
+    'sonda.analysisToggleTitle': 'Mostra o amaga les línies d\'anàlisi (ABL, LCL, parcel·les, cisallament, top) d\'aquesta sonda als gràfics i al lateral',
     'profile.title': 'Perfil vertical',
     'profile.hint': 'eix d\'alçada compartit entre panells i sondes',
     'common.downloadImage': 'Descarrega imatge',
@@ -611,6 +614,9 @@ const I18N = {
     'analysis.plumeTop': 'measured top (rise speed)',
     'analysis.parcels': 'parcels (potential height)',
     'analysis.none': '—',
+    'analysis.allOff': 'Analysis is turned off for all active sondes.',
+    'sonda.analysisToggle': 'analysis',
+    'sonda.analysisToggleTitle': 'Show or hide this sonde\'s analysis lines (ABL, LCL, parcels, shear, top) on the charts and sidebar',
     'profile.title': 'Vertical profile',
     'profile.hint': 'height axis shared between panels and sondes',
     'common.downloadImage': 'Download image',
@@ -1000,6 +1006,7 @@ document.getElementById('toggleMapView').addEventListener('click', () => {
 let INCENDI = null;
 let currentSlug = null;
 let activeIds = new Set();
+let analysisOffIds = new Set(); // sondes actives amb l'anàlisi (ABL/LCL/parcel·les/etc.) desactivada -- per defecte totes la tenen activada
 const MAX_ACTIVE_SONDES = 4; // com a màxim 4 sondes dibuixades alhora als gràfics
 
 // ============================================================
@@ -1394,6 +1401,10 @@ function buildSidebar(){
       <span class="elev-edit-wrap" style="display:flex; align-items:center; gap:3px;" title="${t('sonda.elevTitle')}">
         <input type="number" class="elev-edit" data-sond-id="${s.sond_id}" value="${elev != null ? elev : ''}" style="width:58px; padding:1px 3px; border:1px solid var(--panel-border); border-radius:3px; font-family:var(--font-mono); font-size:10.5px;">m
       </span>
+      <label class="analysis-toggle-wrap" style="display:flex; align-items:center; gap:3px; cursor:pointer; margin-left:auto;" title="${t('sonda.analysisToggleTitle')}">
+        <input type="checkbox" class="analysis-toggle" data-sond-id="${s.sond_id}" ${!analysisOffIds.has(s.sond_id) ? 'checked' : ''}>
+        <span>${t('sonda.analysisToggle')}</span>
+      </label>
     </div>`;
   }).join('');
   list.querySelectorAll('input[type=checkbox]').forEach(cb => {
@@ -1437,6 +1448,13 @@ function buildSidebar(){
   list.querySelectorAll('.elev-edit').forEach(inp => {
     inp.addEventListener('keydown', e => { if(e.key === 'Enter') inp.blur(); });
     inp.addEventListener('change', () => editSondaElevation(inp.dataset.sondId, inp.value, inp));
+  });
+  list.querySelectorAll('.analysis-toggle').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.sondId;
+      if(cb.checked) analysisOffIds.delete(id); else analysisOffIds.add(id);
+      renderAllCharts();
+    });
   });
   populateSkewTSelectors();
 }
@@ -1602,6 +1620,14 @@ function activeSondes(){
       typeCount[s.tipus]++;
       return { s, color: allSondaColors[s.sond_id] || tipusColor(s.tipus, idx), dash: DASH[idx % DASH.length] };
     });
+}
+
+function analysisSondes(){
+  // les sondes actives que a mes tenen l'anàlisi activada (vegeu el
+  // commutador "anàlisi" de cada sonda al lateral) -- les que la tenen
+  // desactivada segueixen dibuixant-se als gràfics igual, nomes no hi
+  // aporten cap línia de referència ni entrada al panell lateral.
+  return activeSondes().filter(({s}) => !analysisOffIds.has(s.sond_id));
 }
 
 function destroyCharts(){
@@ -1836,7 +1862,7 @@ function ambientRiseSpeedBaseline(){
   // (Castellnou et al. 2025): mediana de totes les sondes ambient actives
   // si n'hi ha, si no el valor teòric ~2 m/s citat a l'article.
   const ambientVals = [];
-  activeSondes().forEach(({s}) => {
+  analysisSondes().forEach(({s}) => {
     if(s.tipus !== 'ambient') return;
     (s.profile || []).forEach(p => { if(p.rise_speed_ms != null) ambientVals.push(p.rise_speed_ms); });
   });
@@ -1890,15 +1916,64 @@ function horizontalRefLinesPlugin(getLines){
   };
 }
 
-function computeRefLinesForActiveSondes(){
+function computeRefLinesForActiveSondes(extra){
+  // extra: 'parcels' (theta), 'windshear' (vent) o 'plumetop' (ascens) --
+  // cada gràfic de dalt hi afegeix nomes la seva mètrica pròpia (Fig. 3a-d
+  // de Castellnou et al. 2025), a sobre de l'ABLh/LCL que ja es dibuixen
+  // pertot arreu.
   const lines = [];
-  activeSondes().forEach(({s, color}) => {
+  const baseline = extra === 'plumetop' ? ambientRiseSpeedBaseline() : null;
+  analysisSondes().forEach(({s, color}) => {
     const ablh = computeABLh(s);
     const lcl = computeLCL(s);
     if(ablh != null) lines.push({ value: ablh, color, label: 'ABLh', dash: [5,3] });
     if(lcl != null) lines.push({ value: lcl, color, label: 'LCL', dash: [2,2] });
+
+    if(extra === 'parcels'){
+      const pS = potentialPlumeTop(s, 's');
+      const pML = potentialPlumeTop(s, 'ml');
+      const pMU = potentialPlumeTop(s, 'mu');
+      if(pS != null) lines.push({ value: pS, color, label: 'S', dash: [1,3] });
+      if(pML != null) lines.push({ value: pML, color, label: 'ML', dash: [1,3] });
+      if(pMU != null) lines.push({ value: pMU, color, label: 'MU', dash: [1,3] });
+    }
+    if(extra === 'windshear'){
+      const shear = computeWindShearHeight(s);
+      if(shear != null) lines.push({ value: shear, color, label: 'shear', dash: [6,2] });
+    }
+    if(extra === 'plumetop' && s.tipus === 'columna'){
+      const top = computeMeasuredPlumeTop(s, baseline);
+      if(top != null) lines.push({ value: top, color, label: 'top', dash: [4,4] });
+    }
   });
   return lines;
+}
+
+function computeWindShearHeight(s){
+  // Alçada del cisallament màxim (Table 2: "the height of the maximum
+  // gradient in the wind speed and direction profiles") -- es combinen
+  // velocitat i direcció en un vector (u,v) i es busca el màxim gradient
+  // vectorial entre nivells consecutius.
+  const profile = (s.profile || [])
+    .filter(p => p.wind_speed_ms != null && p.wind_dir_deg != null && p.alt_msl_m != null)
+    .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
+  if(profile.length < 3) return null;
+
+  const toUV = p => {
+    const rad = p.wind_dir_deg * Math.PI / 180;
+    return { u: -p.wind_speed_ms * Math.sin(rad), v: -p.wind_speed_ms * Math.cos(rad) };
+  };
+
+  let bestGrad = -Infinity, bestAlt = null;
+  for(let i = 1; i < profile.length; i++){
+    const dz = profile[i].alt_msl_m - profile[i - 1].alt_msl_m;
+    if(dz <= 0) continue;
+    const a = toUV(profile[i - 1]), b = toUV(profile[i]);
+    const du = b.u - a.u, dv = b.v - a.v;
+    const grad = Math.sqrt(du * du + dv * dv) / dz;
+    if(grad > bestGrad){ bestGrad = grad; bestAlt = (profile[i - 1].alt_msl_m + profile[i].alt_msl_m) / 2; }
+  }
+  return bestAlt;
 }
 
 function verticalRefLinePlugin(xValue, label, color){
@@ -1957,7 +2032,9 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraT
     data: { datasets },
     plugins: [
       ...(axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : []),
-      horizontalRefLinesPlugin(computeRefLinesForActiveSondes),
+      horizontalRefLinesPlugin(() => computeRefLinesForActiveSondes(
+        axisKey === 'theta' ? 'parcels' : axisKey === 'rise' ? 'plumetop' : undefined
+      )),
       { id: 'syncPlugin_'+canvasId, afterLayout(chart){ syncMiniSliderToChart(chart); if(afterLayoutCallback) afterLayoutCallback(chart); } }
     ],
     options: {
@@ -2070,7 +2147,7 @@ function makeWindChart(extraTopPadding){
   return new Chart(ctx, {
     type:'line',
     data:{ datasets },
-    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(computeRefLinesForActiveSondes), { id: 'syncPlugin_chartWind', afterLayout(chart){ syncMiniSliderToChart(chart); } }],
+    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(() => computeRefLinesForActiveSondes('windshear')), { id: 'syncPlugin_chartWind', afterLayout(chart){ syncMiniSliderToChart(chart); } }],
     options:{
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
       layout: { padding: { top: extraTopPadding || 0 } },
@@ -3232,9 +3309,10 @@ function fmtM(v){
 function renderAnalysisPanel(){
   const panel = document.getElementById('analysisPanel');
   if(!panel) return;
-  const sondes = activeSondes();
+  const sondes = analysisSondes();
   if(!sondes.length){
-    panel.innerHTML = `<div class="analysis-empty">${t('analysis.empty')}</div>`;
+    const msg = activeSondes().length ? t('analysis.allOff') : t('analysis.empty');
+    panel.innerHTML = `<div class="analysis-empty">${msg}</div>`;
     return;
   }
   const baseline = ambientRiseSpeedBaseline();
