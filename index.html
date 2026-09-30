@@ -2098,8 +2098,20 @@ function computeMeasuredPlumeTop(s, baseline){
   const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
   const persistMinM = 200; // distancia minima (m) per sota del llindar per considerar-ho una estabilitzacio real
 
-  let lastAboveIdx = -1;
-  for(let i = 0; i < raw.length; i++){
+  // La cerca de l'estabilització sostinguda només té sentit DESPRÉS del
+  // pic de velocitat d'ascens (el punt més fort de la ploma): just després
+  // de l'enlairament, abans que la ploma real hagi començat, sovint hi ha
+  // un tram amb velocitat baixa (transitori de llançament, encara sense
+  // ascens ferm) que no s'ha de confondre amb "el top" -- si es fes així,
+  // es marcaria un top molt per sota d'on la sonda encara accelera
+  // clarament més amunt (p.ex. per sobre de 7,5 m/s).
+  let peakIdx = 0;
+  for(let i = 1; i < smoothed.length; i++){
+    if(smoothed[i] > smoothed[peakIdx]) peakIdx = i;
+  }
+
+  let lastAboveIdx = peakIdx;
+  for(let i = peakIdx; i < raw.length; i++){
     if(smoothed[i] > threshold){
       lastAboveIdx = i;
       continue;
