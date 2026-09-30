@@ -12,7 +12,10 @@ import math
 import tempfile
 from pathlib import Path
 
-ERA5_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100]
+ERA5_LEVELS = [
+    1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 700, 650, 600,
+    550, 500, 450, 400, 350, 300, 250, 225, 200, 175, 150, 125, 100,
+]
 G0 = 9.80665  # gravetat estandard, per convertir geopotencial -> alcada geopotencial
 
 
