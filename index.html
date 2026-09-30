@@ -1828,33 +1828,41 @@ function parcelInitState(s, kind){
   return null;
 }
 
-function potentialPlumeTop(s, kind){
-  // Alçada potencial de la ploma segons el mètode de la parcel·la
-  // (Holzworth, 1964): ascens sec (theta constant) des de l'estat
-  // inicial fins que la seva temperatura creua per sota la de l'entorn
-  // (el mateix sondeig fent de perfil ambiental) -- igual que el mètode
-  // clàssic per estimar l'alçada màxima de la capa de mescla.
+function parcelAscentPath(s, kind){
+  // Trajectòria completa d'ascens sec de la parcel·la (Holzworth, 1964):
+  // theta constant des de l'alçada inicial fins que la seva temperatura
+  // creua per sota la de l'entorn (el mateix sondeig fent de perfil
+  // ambiental). Torna prou informació per dibuixar-la com a la Fig. 3a
+  // de l'article (segment vertical a theta constant), no nomes l'alçada
+  // final.
   const init = parcelInitState(s, kind);
   if(!init) return null;
-  const thetaParcel = (init.tC + 273.15) * Math.pow(1000 / init.pMb, 0.286);
+  const thetaK = (init.tC + 273.15) * Math.pow(1000 / init.pMb, 0.286);
 
   const env = (s.profile || [])
     .filter(p => p.pressure_mb != null && p.temp_c != null && p.alt_msl_m != null)
     .sort((a, b) => b.pressure_mb - a.pressure_mb);
   if(!env.length) return null;
 
-  let prevDiff = null, prevPt = null;
+  let prevDiff = null, prevPt = null, topAltMsl = null;
   for(const p of env){
-    const tParcelAtP = thetaParcel * Math.pow(p.pressure_mb / 1000, 0.286) - 273.15;
+    const tParcelAtP = thetaK * Math.pow(p.pressure_mb / 1000, 0.286) - 273.15;
     const diff = tParcelAtP - p.temp_c;
-    if(prevDiff == null && diff < 0) return p.alt_msl_m; // sense flotabilitat ja des de l'inici
+    if(prevDiff == null && diff < 0){ topAltMsl = p.alt_msl_m; break; } // sense flotabilitat ja des de l'inici
     if(prevDiff != null && prevDiff >= 0 && diff < 0){
       const frac = prevDiff / (prevDiff - diff);
-      return prevPt.alt_msl_m + frac * (p.alt_msl_m - prevPt.alt_msl_m);
+      topAltMsl = prevPt.alt_msl_m + frac * (p.alt_msl_m - prevPt.alt_msl_m);
+      break;
     }
     prevDiff = diff; prevPt = p;
   }
-  return null; // no creua l'ambient dins el rang mesurat
+  // topAltMsl es null si no creua l'ambient dins el rang mesurat
+  return { thetaK, sfcAltMsl: init.altMsl, topAltMsl };
+}
+
+function potentialPlumeTop(s, kind){
+  const path = parcelAscentPath(s, kind);
+  return path ? path.topAltMsl : null;
 }
 
 function ambientRiseSpeedBaseline(){
@@ -1886,29 +1894,62 @@ function computeMeasuredPlumeTop(s, baseline){
   return topAlt;
 }
 
-function horizontalRefLinesPlugin(getLines){
+function computeParcelSegmentsForActiveSondes(){
+  const segs = [];
+  analysisSondes().forEach(({s, color}) => {
+    ['s', 'ml', 'mu'].forEach(kind => {
+      const path = parcelAscentPath(s, kind);
+      if(path && path.topAltMsl != null){
+        segs.push({ thetaK: path.thetaK, sfcAltMsl: path.sfcAltMsl, topAltMsl: path.topAltMsl, color, label: kind.toUpperCase() });
+      }
+    });
+  });
+  return segs;
+}
+
+function parcelAscentPlugin(getSegments){
+  // Dibuixa cada parcel·la com un segment vertical discontinu a theta
+  // constant (Fig. 3a de Castellnou et al. 2025), des de la superfície
+  // de la sonda fins on deixa de flotar -- no com una línia/fletxa
+  // horitzontal, ja que aquí el que interessa es veure el propi camí
+  // d'ascens, no nomes l'alçada final.
   return {
-    id: 'hRefLines',
-    afterDraw(chart){
+    id: 'parcelAscent',
+    afterDatasetsDraw(chart){
       const xScale = chart.scales.x, yScale = chart.scales.y;
       const ctx = chart.ctx;
-      getLines().forEach(line => {
-        if(line.value == null || line.value < yScale.min || line.value > yScale.max) return;
-        const yPix = yScale.getPixelForValue(line.value);
+      getSegments().forEach(seg => {
+        if(seg.thetaK == null || seg.topAltMsl == null) return;
+        if(seg.thetaK < xScale.min || seg.thetaK > xScale.max) return;
+        const yTop = Math.max(yScale.min, Math.min(seg.topAltMsl, yScale.max));
+        const yBottom = Math.max(yScale.min, Math.min(seg.sfcAltMsl, yScale.max));
+        if(yTop <= yBottom) return;
+        const x = xScale.getPixelForValue(seg.thetaK);
+        const yPixTop = yScale.getPixelForValue(yTop);
+        const yPixBottom = yScale.getPixelForValue(yBottom);
+
         ctx.save();
-        ctx.strokeStyle = line.color;
-        ctx.setLineDash(line.dash || [5, 3]);
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = seg.color;
+        ctx.lineWidth = 1.3;
+        ctx.setLineDash([3, 2]);
         ctx.beginPath();
-        ctx.moveTo(xScale.left, yPix);
-        ctx.lineTo(xScale.right, yPix);
+        ctx.moveTo(x, yPixBottom);
+        ctx.lineTo(x, yPixTop);
         ctx.stroke();
-        if(line.label){
-          ctx.setLineDash([]);
-          ctx.fillStyle = line.color;
-          ctx.font = '9px "Roboto Mono", monospace';
-          ctx.textAlign = 'left';
-          ctx.fillText(line.label, xScale.left + 2, yPix - 2);
+
+        ctx.setLineDash([]);
+        ctx.fillStyle = seg.color;
+        ctx.beginPath();
+        ctx.moveTo(x, yPixTop);
+        ctx.lineTo(x - 3.5, yPixTop + 6);
+        ctx.lineTo(x + 3.5, yPixTop + 6);
+        ctx.closePath();
+        ctx.fill();
+
+        if(seg.label){
+          ctx.font = '8px "Roboto Mono", monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(seg.label, x, yPixTop - 4);
         }
         ctx.restore();
       });
@@ -1916,64 +1957,71 @@ function horizontalRefLinesPlugin(getLines){
   };
 }
 
+function horizontalRefLinesPlugin(getLines){
+  // Petites fletxes al marge dret (a l'estil de la Fig. 3e de Castellnou
+  // et al. 2025), en lloc d'una línia sencera a través de tot el gràfic --
+  // menys soroll visual quan hi ha diverses sondes i mètriques alhora.
+  return {
+    id: 'hRefLines',
+    afterDraw(chart){
+      const xScale = chart.scales.x, yScale = chart.scales.y;
+      const ctx = chart.ctx;
+      // agrupa per alçada arrodonida perquè les etiquetes que cauen molt
+      // juntes (p.ex. dues sondes amb ABLh gairebé igual) no es superposin
+      const byY = new Map();
+      getLines().forEach(line => {
+        if(line.value == null || line.value < yScale.min || line.value > yScale.max) return;
+        const yPix = Math.round(yScale.getPixelForValue(line.value));
+        if(!byY.has(yPix)) byY.set(yPix, []);
+        byY.get(yPix).push(line);
+      });
+      const rowsUsed = [];
+      [...byY.entries()].sort((a, b) => a[0] - b[0]).forEach(([yPix, group]) => {
+        group.forEach((line, gi) => {
+          let y = yPix + gi * 10; // separa lleugerament si coincideixen exactament
+          while(rowsUsed.some(u => Math.abs(u - y) < 9)) y += 9;
+          rowsUsed.push(y);
+
+          ctx.save();
+          ctx.fillStyle = line.color;
+          ctx.strokeStyle = line.color;
+          const tipX = xScale.right;
+          ctx.beginPath();
+          ctx.moveTo(tipX, y);
+          ctx.lineTo(tipX + 6, y - 3.5);
+          ctx.lineTo(tipX + 6, y + 3.5);
+          ctx.closePath();
+          ctx.fill();
+          if(line.label){
+            ctx.font = '9px "Roboto Mono", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(line.label, tipX + 9, y + 3);
+          }
+          ctx.restore();
+        });
+      });
+    }
+  };
+}
+
 function computeRefLinesForActiveSondes(extra){
-  // extra: 'parcels' (theta), 'windshear' (vent) o 'plumetop' (ascens) --
-  // cada gràfic de dalt hi afegeix nomes la seva mètrica pròpia (Fig. 3a-d
-  // de Castellnou et al. 2025), a sobre de l'ABLh/LCL que ja es dibuixen
-  // pertot arreu.
+  // extra: 'plumetop' (nomes al gràfic d'ascens) -- els altres gràfics
+  // nomes hi mostren ABLh/LCL. Les parcel·les es dibuixen a part com a
+  // segments verticals (vegeu parcelAscentPlugin), nomes al gràfic de θᵥ.
   const lines = [];
   const baseline = extra === 'plumetop' ? ambientRiseSpeedBaseline() : null;
   analysisSondes().forEach(({s, color}) => {
     const ablh = computeABLh(s);
     const lcl = computeLCL(s);
-    if(ablh != null) lines.push({ value: ablh, color, label: 'ABLh', dash: [5,3] });
-    if(lcl != null) lines.push({ value: lcl, color, label: 'LCL', dash: [2,2] });
+    if(ablh != null) lines.push({ value: ablh, color, label: 'ABLh' });
+    if(lcl != null) lines.push({ value: lcl, color, label: 'LCL' });
 
-    if(extra === 'parcels'){
-      const pS = potentialPlumeTop(s, 's');
-      const pML = potentialPlumeTop(s, 'ml');
-      const pMU = potentialPlumeTop(s, 'mu');
-      if(pS != null) lines.push({ value: pS, color, label: 'S', dash: [1,3] });
-      if(pML != null) lines.push({ value: pML, color, label: 'ML', dash: [1,3] });
-      if(pMU != null) lines.push({ value: pMU, color, label: 'MU', dash: [1,3] });
-    }
-    if(extra === 'windshear'){
-      const shear = computeWindShearHeight(s);
-      if(shear != null) lines.push({ value: shear, color, label: 'shear', dash: [6,2] });
-    }
     if(extra === 'plumetop' && s.tipus === 'columna'){
       const top = computeMeasuredPlumeTop(s, baseline);
-      if(top != null) lines.push({ value: top, color, label: 'top', dash: [4,4] });
+      if(top != null) lines.push({ value: top, color, label: 'top' });
     }
   });
   return lines;
-}
-
-function computeWindShearHeight(s){
-  // Alçada del cisallament màxim (Table 2: "the height of the maximum
-  // gradient in the wind speed and direction profiles") -- es combinen
-  // velocitat i direcció en un vector (u,v) i es busca el màxim gradient
-  // vectorial entre nivells consecutius.
-  const profile = (s.profile || [])
-    .filter(p => p.wind_speed_ms != null && p.wind_dir_deg != null && p.alt_msl_m != null)
-    .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
-  if(profile.length < 3) return null;
-
-  const toUV = p => {
-    const rad = p.wind_dir_deg * Math.PI / 180;
-    return { u: -p.wind_speed_ms * Math.sin(rad), v: -p.wind_speed_ms * Math.cos(rad) };
-  };
-
-  let bestGrad = -Infinity, bestAlt = null;
-  for(let i = 1; i < profile.length; i++){
-    const dz = profile[i].alt_msl_m - profile[i - 1].alt_msl_m;
-    if(dz <= 0) continue;
-    const a = toUV(profile[i - 1]), b = toUV(profile[i]);
-    const du = b.u - a.u, dv = b.v - a.v;
-    const grad = Math.sqrt(du * du + dv * dv) / dz;
-    if(grad > bestGrad){ bestGrad = grad; bestAlt = (profile[i - 1].alt_msl_m + profile[i].alt_msl_m) / 2; }
-  }
-  return bestAlt;
 }
 
 function verticalRefLinePlugin(xValue, label, color){
@@ -2032,14 +2080,13 @@ function makeMultiChart(canvasId, field, xLabel, axisKey, unit, decimals, extraT
     data: { datasets },
     plugins: [
       ...(axisKey === 'rise' ? [verticalRefLinePlugin(2, '2 m/s')] : []),
-      horizontalRefLinesPlugin(() => computeRefLinesForActiveSondes(
-        axisKey === 'theta' ? 'parcels' : axisKey === 'rise' ? 'plumetop' : undefined
-      )),
+      ...(axisKey === 'theta' ? [parcelAscentPlugin(computeParcelSegmentsForActiveSondes)] : []),
+      horizontalRefLinesPlugin(() => computeRefLinesForActiveSondes(axisKey === 'rise' ? 'plumetop' : undefined)),
       { id: 'syncPlugin_'+canvasId, afterLayout(chart){ syncMiniSliderToChart(chart); if(afterLayoutCallback) afterLayoutCallback(chart); } }
     ],
     options: {
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
-      layout: { padding: { top: extraTopPadding || 0 } },
+      layout: { padding: { top: extraTopPadding || 0, right: 34 } }, // marge per les fletxes d'anàlisi al marge dret
       scales: {
         x: { type:'linear', min:xMin, max:xMax, title:{display:true, text:xLabel, color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
         y: { type:'linear', min:yMin, max:yMax, title:{display: canvasId==='chartTheta', text:t('chart.heightAxis'), color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: canvasId==='chartTheta', font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
@@ -2147,10 +2194,10 @@ function makeWindChart(extraTopPadding){
   return new Chart(ctx, {
     type:'line',
     data:{ datasets },
-    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(() => computeRefLinesForActiveSondes('windshear')), { id: 'syncPlugin_chartWind', afterLayout(chart){ syncMiniSliderToChart(chart); } }],
+    plugins: [windBarbsPlugin, horizontalRefLinesPlugin(computeRefLinesForActiveSondes), { id: 'syncPlugin_chartWind', afterLayout(chart){ syncMiniSliderToChart(chart); } }],
     options:{
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
-      layout: { padding: { top: extraTopPadding || 0 } },
+      layout: { padding: { top: extraTopPadding || 0, right: 34 } },
       windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
       scales:{
         x:{ type:'linear', min:xMin, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
