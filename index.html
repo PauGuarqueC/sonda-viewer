@@ -112,15 +112,16 @@
   }
   #gate .err{ color:var(--red); font-size:12px; margin-top:8px; display:none; }
 
-  /* ---- detall d'incendi ---- */
-  #view-incendi .incendi-header{
+  /* ---- detall d'incendi (i vista d'anàlisi, que reutilitza la mateixa
+     capçalera -- vegeu view-analysis) ---- */
+  #view-incendi .incendi-header, #view-analysis .incendi-header{
     padding:14px 22px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
     border-bottom:1px solid var(--panel-border); background:var(--panel);
   }
-  #view-incendi .incendi-header h2{ font-size:16px; font-weight:700; margin:0; color:var(--charcoal); }
-  #view-incendi .incendi-header h2 span{ color:var(--red); }
-  #view-incendi .incendi-header .sub{ font-size:12.5px; color:var(--text-dim); font-family:var(--font-mono); }
-  #view-incendi .incendi-header a{ margin-left:auto; font-size:12.5px; color:var(--text-dim); }
+  #view-incendi .incendi-header h2, #view-analysis .incendi-header h2{ font-size:16px; font-weight:700; margin:0; color:var(--charcoal); }
+  #view-incendi .incendi-header h2 span, #view-analysis .incendi-header h2 span{ color:var(--red); }
+  #view-incendi .incendi-header .sub, #view-analysis .incendi-header .sub{ font-size:12.5px; color:var(--text-dim); font-family:var(--font-mono); }
+  #view-incendi .incendi-header a, #view-analysis .incendi-header a{ margin-left:auto; font-size:12.5px; color:var(--text-dim); }
 
   #incendiMain{ display:grid; grid-template-columns: 250px minmax(0, 1fr); min-height:calc(100vh - 120px); }
   #sidebar{ background:var(--panel); border-right:1px solid var(--panel-border); padding:16px; }
