@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from crypto_utils import decrypt_str, encrypt_str
-from fetch_era5 import fetch_era5_profile
+from fetch_era5 import ERA5_LEVELS, fetch_era5_profile
 
 ERA5_MIN_AGE_DAYS = 6  # marge de seguretat per sobre del retard tipic d'ERA5T (~5 dies)
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "incendis"
@@ -27,12 +27,18 @@ def needs_era5(sonda_data):
     existing = sonda_data.get("era5_profile")
     if existing:
         # perfils obtinguts abans que fetch_era5_profile inclogués
-        # pressure_mb/temp_c, abans que es desés era5_target_hour, o amb
+        # pressure_mb/temp_c, abans que es desés era5_target_hour, amb
         # l'hora mal truncada (cap avall sempre, en lloc d'arrodonida a la
-        # mes propera) es tornen a demanar un cop -- launch_time_utc encara
-        # es conserva a la sonda, aixi que es pot recalcular quina hauria
-        # de ser l'hora correcta i comparar-la amb la que ja hi ha desada.
-        complete = all("pressure_mb" in pt and "temp_c" in pt for pt in existing)
+        # mes propera), o amb menys nivells que els que es demanen ara
+        # (ERA5_LEVELS es va ampliar de 12 a tots els nivells estandard
+        # entre 100 i 1000hPa) es tornen a demanar un cop -- launch_time_utc
+        # encara es conserva a la sonda, aixi que es pot recalcular quina
+        # hauria de ser l'hora correcta i comparar-la amb la que ja hi ha
+        # desada.
+        complete = (
+            all("pressure_mb" in pt and "temp_c" in pt for pt in existing)
+            and len(existing) >= len(ERA5_LEVELS)
+        )
         stored_hour = sonda_data.get("era5_target_hour")
         if complete and stored_hour:
             rounded = rounded_launch_hour(sonda_data)
