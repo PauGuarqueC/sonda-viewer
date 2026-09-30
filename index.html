@@ -537,18 +537,18 @@ const I18N = {
     'analysis.protoPlumeMeasured': 'top mesurat',
     'analysis.protoPlumeParcel': 'top potencial (parcel·la MU)',
     'analysis.protoWindShear': 'cisallament',
-    'analysis.proto.surface.name': 'Ploma superficial',
-    'analysis.proto.surface.effect': 'Ploma diluïda dins l\'ABL, sense efecte notable sobre la propagació.',
-    'analysis.proto.convective.name': 'Ploma convectiva',
-    'analysis.proto.convective.effect': 'Intensificació del comportament del foc i espurnejat de curt abast.',
-    'analysis.proto.overshoot.name': 'PyroCu amb overshooting',
-    'analysis.proto.overshoot.effect': 'Acceleració sostinguda i espurnejat de curt abast constant. Elongació del perímetre.',
-    'analysis.proto.shallow.name': 'PyroCu superficial',
-    'analysis.proto.shallow.effect': 'Acceleració sostinguda amb polsos d\'expansió del perímetre i espurnejat de llarg abast.',
-    'analysis.proto.towering.name': 'PyroCu de torre',
+    'analysis.proto.surface.name': 'Columna superficial',
+    'analysis.proto.surface.effect': 'Columna diluïda dins l\'ABL, sense efecte notable sobre la propagació.',
+    'analysis.proto.convective.name': 'Columna convectiva',
+    'analysis.proto.convective.effect': 'Intensificació del comportament del foc i FS de curt abast.',
+    'analysis.proto.overshoot.name': 'Overshooting PyroCu',
+    'analysis.proto.overshoot.effect': 'Acceleració sostinguda i FS de curt abast constant. Estirada del perímetre.',
+    'analysis.proto.shallow.name': 'PyroCu',
+    'analysis.proto.shallow.effect': 'Acceleració sostinguda i expansió del perímetre, amb FS de llarg abast.',
+    'analysis.proto.towering.name': 'Resilient PyroCu',
     'analysis.proto.towering.effect': 'Propagació extrema sostinguda, amb possibles downdrafts i comportament caòtic.',
     'analysis.proto.pyrocb.name': 'PyroCb',
-    'analysis.proto.pyrocb.effect': 'Comportament caòtic i sostingut per downdrafts, amb espurnejat de llarg abast.',
+    'analysis.proto.pyrocb.effect': 'Comportament caòtic i sostingut per downdrafts, amb FS de llarg abast.',
     'profile.title': 'Perfil vertical',
     'profile.hint': 'eix d\'alçada compartit entre panells i sondes',
     'common.downloadImage': 'Descarrega imatge',
@@ -707,18 +707,18 @@ const I18N = {
     'analysis.protoPlumeMeasured': 'measured top',
     'analysis.protoPlumeParcel': 'potential top (MU parcel)',
     'analysis.protoWindShear': 'shear',
-    'analysis.proto.surface.name': 'Surface plume',
-    'analysis.proto.surface.effect': 'Plume diluted inside the ABL, no notable effect on fire spread.',
-    'analysis.proto.convective.name': 'Convective plume',
-    'analysis.proto.convective.effect': 'Fire behavior intensification and short-distance spotting.',
-    'analysis.proto.overshoot.name': 'Overshooting pyroCu',
-    'analysis.proto.overshoot.effect': 'Sustained fire spread acceleration and constant short-distance spotting. Perimeter elongation.',
-    'analysis.proto.shallow.name': 'Shallow pyroCu',
-    'analysis.proto.shallow.effect': 'Sustained acceleration with perimeter expansion pulses and long-distance spotting.',
-    'analysis.proto.towering.name': 'Towering pyroCu',
+    'analysis.proto.surface.name': 'Surface column',
+    'analysis.proto.surface.effect': 'Column diluted inside the ABL, no notable effect on fire spread.',
+    'analysis.proto.convective.name': 'Convective column',
+    'analysis.proto.convective.effect': 'Fire behavior intensification and short-distance spot fires.',
+    'analysis.proto.overshoot.name': 'Overshooting PyroCu',
+    'analysis.proto.overshoot.effect': 'Sustained acceleration and constant short-distance spot fires. Perimeter stretch.',
+    'analysis.proto.shallow.name': 'PyroCu',
+    'analysis.proto.shallow.effect': 'Sustained acceleration and perimeter expansion, with long-distance spot fires.',
+    'analysis.proto.towering.name': 'Resilient PyroCu',
     'analysis.proto.towering.effect': 'Sustained extreme spread, with possible downdrafts and chaotic behavior.',
     'analysis.proto.pyrocb.name': 'PyroCb',
-    'analysis.proto.pyrocb.effect': 'Sustained chaotic behavior driven by downdrafts, with long-distance spotting.',
+    'analysis.proto.pyrocb.effect': 'Sustained chaotic behavior driven by downdrafts, with long-distance spot fires.',
     'profile.title': 'Vertical profile',
     'profile.hint': 'height axis shared between panels and sondes',
     'common.downloadImage': 'Download image',
@@ -1756,12 +1756,30 @@ function tooltipCallbacks(unit, decimals){
   };
 }
 
-function computeABLh(s){
+function smoothSeries(values, windowSize){
+  // Mitjana mòbil senzilla (finestra centrada) -- fa servir menys punts a
+  // les vores. Es fa servir per treure soroll d'un sol punt abans de
+  // buscar-hi màxims/llindars (gradient de RH, velocitat d'ascens).
+  const half = Math.floor(windowSize / 2);
+  return values.map((v, i) => {
+    const lo = Math.max(0, i - half), hi = Math.min(values.length - 1, i + half);
+    let sum = 0, n = 0;
+    for(let j = lo; j <= hi; j++){ sum += values[j]; n++; }
+    return sum / n;
+  });
+}
+
+function computeABLh_RiB(s){
   // Metode del nombre de Richardson global (Ri_b): busca l'alcada on Ri_b
   // supera el llindar critic (0.25), interpolant entre els dos punts que
   // l'envolten per mes precisio. Fa servir alcada AGL per al calcul (com es
   // habitual), i torna el resultat en ASL per dibuixar-lo al mateix eix
-  // que la resta.
+  // que la resta. Punt feble conegut: amb vent fluix i variable (freqüent
+  // just per sobre d'un incendi), Ri_b pot disparar-se per una diferencia
+  // de theta minima nomes perquè el vent al denominador és gairebé zero,
+  // donant una "inversio" massa amunt o massa avall que no es correspon
+  // amb el que es veu al perfil d'humitat -- per aixo computeABLh la
+  // contrasta amb computeABLh_RH.
   const profile = (s.profile || []).filter(p => p.theta_v_k != null && p.height_agl_m != null && p.alt_msl_m != null);
   if(profile.length < 3) return null;
   const sfc = profile[0];
@@ -1794,6 +1812,45 @@ function computeABLh(s){
     riPrev = ri;
   }
   return null; // no s'ha trobat una inversio clara dins el rang mesurat
+}
+
+function computeABLh_RH(s){
+  // Metode alternatiu, vegeu Fig. 3b de Castellnou et al. 2025: la capa
+  // límit sol acabar en una zona d'entrainment on la humitat relativa cau
+  // de sobte -- es busca l'alçada on aquesta caiguda (gradient negatiu de
+  // RH amb l'alçada) és mes pronunciada. Es suavitza abans amb una
+  // mitjana mòbil perquè un sol punt sorollós no en falsegi el màxim.
+  const raw = (s.profile || [])
+    .filter(p => p.rh_pct != null && p.alt_msl_m != null)
+    .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
+  if(raw.length < 5) return null;
+  const smoothedRh = smoothSeries(raw.map(p => p.rh_pct), 5);
+  let bestGrad = 0, bestAlt = null;
+  for(let i = 1; i < raw.length; i++){
+    const dz = raw[i].alt_msl_m - raw[i-1].alt_msl_m;
+    if(dz <= 0) continue;
+    const grad = (smoothedRh[i-1] - smoothedRh[i]) / dz; // positiu = la humitat baixa amb l'alçada
+    if(grad > bestGrad){ bestGrad = grad; bestAlt = (raw[i-1].alt_msl_m + raw[i].alt_msl_m) / 2; }
+  }
+  return bestAlt;
+}
+
+function computeABLh(s){
+  // Combina els dos mètodes anteriors: Ri_b és mes precís quan el vent es
+  // prou fort per no dominar el soroll, pero pot desviar-se amb vent
+  // fluix i variable; el gradient de RH es mes robust en aquest cas
+  // perquè nomes depèn d'una variable i es suavitza abans. Si Ri_b no
+  // troba res, o si difereix molt del que marca la RH (senyal que Ri_b ha
+  // trobat una inversio espúria, no la capa límit real), es fa servir el
+  // resultat de RH; si tots dos coincideixen raonablement, es queda amb
+  // el de Ri_b (mes precís al ser quantitatiu, no nomes el punt de
+  // gradient màxim).
+  const riB = computeABLh_RiB(s);
+  const rh = computeABLh_RH(s);
+  if(riB == null) return rh;
+  if(rh == null) return riB;
+  const diverge = Math.abs(riB - rh) > Math.max(400, rh * 0.5);
+  return diverge ? rh : riB;
 }
 
 function lclFromTTd(tC, tdC, pMb){
@@ -2005,13 +2062,20 @@ function computeMeasuredPlumeTop(s, baseline){
   // ploma accelera respecte l'ambient mentre és dins l'updraft -- el top
   // s'estima com l'alçada mes alta on encara es manté clarament per sobre
   // d'aquest valor de referència.
-  const profile = (s.profile || [])
+  // Es suavitza la velocitat d'ascens abans de buscar el llindar: sense
+  // aixo, un sol punt sorollós per sobre del llindar molt mes amunt d'on
+  // realment s'ha estabilitzat a l'ambient (turbulència residual, ratxa
+  // puntual...) allargava el "top" fins aquell punt aïllat, molt per
+  // sobre d'on el perfil ja s'havia estabilitzat visualment al voltant
+  // del valor ambient.
+  const raw = (s.profile || [])
     .filter(p => p.rise_speed_ms != null && p.alt_msl_m != null)
     .sort((a, b) => a.alt_msl_m - b.alt_msl_m);
-  if(profile.length < 3) return null;
+  if(raw.length < 5) return null;
   const threshold = baseline + Math.max(0.5, baseline * 0.5);
+  const smoothed = smoothSeries(raw.map(p => p.rise_speed_ms), 5);
   let topAlt = null;
-  profile.forEach(p => { if(p.rise_speed_ms > threshold) topAlt = p.alt_msl_m; });
+  raw.forEach((p, i) => { if(smoothed[i] > threshold) topAlt = p.alt_msl_m; });
   return topAlt;
 }
 
