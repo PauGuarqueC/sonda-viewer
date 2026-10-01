@@ -406,6 +406,7 @@
   <div class="incendi-header">
     <h2 data-i18n-html="analysis.viewHeaderTitle">Anàlisi — <span id="analysisIncendiName">—</span></h2>
     <span class="sub" data-i18n="analysis.viewHeaderSub">ABL, LCL i parcel·les S/ML/MU sobre la sonda de columna seleccionada</span>
+    <button type="button" id="analysisDownloadImgBtn" data-i18n="analysis.downloadImage" style="margin-left:10px; font-family:var(--font-mono); font-size:11.5px; padding:3px 9px; border:1px solid var(--panel-border); border-radius:4px; background:#fff; cursor:pointer;">Descarrega imatge</button>
     <a href="#" id="analysisBackLink" data-i18n="analysis.backToIncendi">← torna al perfil</a>
   </div>
 
@@ -525,6 +526,7 @@ const I18N = {
     'analysis.none': '—',
     'analysis.viewHeaderTitle': 'Anàlisi — <span id="analysisIncendiName">—</span>',
     'analysis.viewHeaderSub': 'ABL, LCL i parcel·les S/ML/MU sobre la sonda de columna seleccionada',
+    'analysis.downloadImage': 'Descarrega imatge',
     'analysis.backToIncendi': '← torna al perfil',
     'analysis.columnaSelectLabel': 'Sonda de columna:',
     'analysis.ambientHint': '+ sondes ambient actives al perfil, per comparar',
@@ -698,6 +700,7 @@ const I18N = {
     'analysis.none': '—',
     'analysis.viewHeaderTitle': 'Analysis — <span id="analysisIncendiName">—</span>',
     'analysis.viewHeaderSub': 'ABL, LCL and S/ML/MU parcels over the selected column sonde',
+    'analysis.downloadImage': 'Download image',
     'analysis.backToIncendi': '← back to profile',
     'analysis.columnaSelectLabel': 'Column sonde:',
     'analysis.ambientHint': '+ active ambient sondes from the profile, for comparison',
@@ -1433,11 +1436,17 @@ function setupAxisSliders(){
     rise:   { min:0, max:riseMax },
   };
 
-  configureDualSlider('sliderHeightMin', 'sliderHeightMax', 'sliderHeightMinVal', 'sliderHeightMaxVal', 0, heightMax, 100, 0, heightMax);
-  configureDualSlider('sliderThetaMin', 'sliderThetaMax', 'sliderThetaMinVal', 'sliderThetaMaxVal', thetaMin - 6, thetaMax, 2, thetaMin, thetaMax);
+  // El límit superior del propi SLIDER (bound_hi, el 2n número) es deixa
+  // amb marge per sobre del valor inicial (value_hi, el darrer número):
+  // abans bound_hi == value_hi i el tope del slider coincidia exactament
+  // amb la vista inicial, així que es podia baixar el màxim però no
+  // pujar-lo gens (vegeu wireDualSlider, que limita el valor a l'atribut
+  // max de l'input). La vista inicial (value_hi) no canvia.
+  configureDualSlider('sliderHeightMin', 'sliderHeightMax', 'sliderHeightMinVal', 'sliderHeightMaxVal', 0, heightMax + 2000, 100, 0, heightMax);
+  configureDualSlider('sliderThetaMin', 'sliderThetaMax', 'sliderThetaMinVal', 'sliderThetaMaxVal', thetaMin - 6, thetaMax + 20, 2, thetaMin, thetaMax);
   configureDualSlider('sliderRhMin', 'sliderRhMax', 'sliderRhMinVal', 'sliderRhMaxVal', 0, 100, 5, 0, 100);
-  configureDualSlider('sliderWindMin', 'sliderWindMax', 'sliderWindMinVal', 'sliderWindMaxVal', 0, windMax, 1, 0, windMax);
-  configureDualSlider('sliderRiseMin', 'sliderRiseMax', 'sliderRiseMinVal', 'sliderRiseMaxVal', 0, riseMax, 1, 0, riseMax);
+  configureDualSlider('sliderWindMin', 'sliderWindMax', 'sliderWindMinVal', 'sliderWindMaxVal', 0, windMax + 10, 1, 0, windMax);
+  configureDualSlider('sliderRiseMin', 'sliderRiseMax', 'sliderRiseMinVal', 'sliderRiseMaxVal', 0, riseMax + 10, 1, 0, riseMax);
 }
 
 function configureDualSlider(minId, maxId, minValId, maxValId, bound_lo, bound_hi, step, value_lo, value_hi){
@@ -4258,6 +4267,68 @@ attachRefLineDragHandlers('analysisChartTheta', 'theta', analysisViewSondes);
 attachRefLineDragHandlers('analysisChartRh', 'rh', analysisViewSondes);
 attachRefLineDragHandlers('analysisChartWind', 'wind', analysisViewSondes);
 attachRefLineDragHandlers('analysisChartRise', 'rise', analysisViewSondes);
+
+function slugifyFilename(text){
+  return (text || '')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'sonda';
+}
+
+function downloadAnalysisChartsImage(){
+  const specs = [
+    { chart: analysisCharts.theta, title: t('chart.thetaTitle') },
+    { chart: analysisCharts.rh, title: t('chart.rhTitle') },
+    { chart: analysisCharts.wind, title: t('chart.windTitle') },
+    { chart: analysisCharts.rise, title: t('chart.riseTitle') },
+  ].filter(spec => spec.chart);
+  if(!specs.length) return;
+
+  // Es combinen els 4 canvas de Chart.js (ja renderitzats a la pantalla, a
+  // la seva resolucio real amb devicePixelRatio) en UNA sola imatge, un al
+  // costat de l'altre amb el títol a sobre -- més fàcil d'adjuntar a un
+  // informe que 4 captures separades.
+  const titleH = 30, gap = 18, pad = 14;
+  const chartH = Math.max(...specs.map(sp => sp.chart.canvas.height));
+  const totalW = specs.reduce((sum, sp) => sum + sp.chart.canvas.width, 0) + gap * (specs.length - 1) + pad * 2;
+  const totalH = chartH + titleH + pad * 2;
+
+  const out = document.createElement('canvas');
+  out.width = totalW;
+  out.height = totalH;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  let x = pad;
+  specs.forEach(({ chart, title }) => {
+    ctx.fillStyle = '#333333';
+    ctx.font = '600 15px "Roboto Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(title, x, pad + 18);
+    ctx.drawImage(chart.canvas, x, pad + titleH, chart.canvas.width, chart.canvas.height);
+    x += chart.canvas.width + gap;
+  });
+
+  const incendiName = (INCENDI && INCENDI.incendi) ? INCENDI.incendi : 'incendi';
+  const sondaName = analysisColumnaId ? sondaLabel(analysisColumnaId) : 'sonda';
+  const filename = `analisi_${slugifyFilename(incendiName)}_${slugifyFilename(sondaName)}.png`;
+
+  out.toBlob(blob => {
+    if(!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+
+document.getElementById('analysisDownloadImgBtn').addEventListener('click', downloadAnalysisChartsImage);
 
 // ============================================================
 // VISTA: pujar sonda
