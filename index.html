@@ -610,6 +610,7 @@ const I18N = {
     'status.deleting': 'Eliminant {label}...',
     'status.deleteFailed': 'No s\'ha pogut eliminar la sonda: {msg}',
     'status.elevFailed': 'No s\'ha pogut corregir l\'alçada: {msg}',
+    'status.manualRefFailed': 'No s\'ha pogut desar la correcció manual: {msg}',
     'status.kmzNoKml': 'el .kmz no conté cap fitxer .kml a dins',
     'status.kmlInvalid': 'KML/KMZ no vàlid: {msg}',
     'status.fileNotJson': 'Fitxer no és JSON vàlid.',
@@ -775,6 +776,7 @@ const I18N = {
     'status.deleting': 'Deleting {label}...',
     'status.deleteFailed': 'Could not delete the sonde: {msg}',
     'status.elevFailed': 'Could not correct the elevation: {msg}',
+    'status.manualRefFailed': 'Could not save the manual correction: {msg}',
     'status.kmzNoKml': 'the .kmz does not contain a .kml file inside',
     'status.kmlInvalid': 'Invalid KML/KMZ: {msg}',
     'status.fileNotJson': 'File is not valid JSON.',
@@ -2269,7 +2271,7 @@ function plumeTopForClassification(s){
   // mesurat), cau a l'alçada potencial de la parcel·la MU -- la mes
   // representativa de les tres segons l'article -- sempre que tingui
   // flotabilitat.
-  const measured = computeMeasuredPlumeTop(s, ambientRiseSpeedBaseline(analysisViewSondes()));
+  const measured = effectiveMeasuredPlumeTop(s, ambientRiseSpeedBaseline(analysisViewSondes()));
   if(measured != null) return { value: measured, source: 'measured' };
   const mu = parcelAscentPath(s, 'mu');
   if(mu && mu.topAltMsl != null && !mu.noBuoyancy) return { value: mu.topAltMsl, source: 'parcel' };
@@ -2303,7 +2305,7 @@ function classifyPyroconvection(s, ambientAbl){
   // 3); si no n'hi ha, es fa servir la pròpia fireABL de la sonda de
   // columna com a aproximació (menys fiable, es marca com a tal).
   let abl = ambientAbl, ablSource = 'ambient';
-  if(abl == null){ abl = computeABLh(s); ablSource = 'fireABL'; }
+  if(abl == null){ abl = effectiveABLh(s); ablSource = 'fireABL'; }
   const lcl = computeLCL_ML(s);
   const { value: plumeTop, source: plumeSource } = plumeTopForClassification(s);
   if(abl == null || lcl == null || plumeTop == null) return null;
@@ -2477,22 +2479,49 @@ function horizontalRefLinesPlugin(getLines){
   };
 }
 
+// Correccio manual de les linies de referencia (ABLh/LCL/top): en perfils
+// molt torbulents cap heuristica automatica els encerta tots, aixi que es
+// poden arrossegar a ma al grafic (vegeu attachRefLineDragHandlers) -- el
+// valor manual es desa a la propia sonda (manual_<kind>_asl_m) i substitueix
+// el calculat a tot arreu (grafic, panell numeric, classificacio de
+// prototip) fins que es torna a l'automatic (doble clic sobre la linia).
+function manualRefFieldKey(kind){
+  return 'manual_' + kind + '_asl_m';
+}
+
+function effectiveABLh(s){
+  const v = s[manualRefFieldKey('ablh')];
+  return v != null ? v : computeABLh(s);
+}
+
+function effectiveLCL(s){
+  const v = s[manualRefFieldKey('lcl')];
+  return v != null ? v : computeLCL(s);
+}
+
+function effectiveMeasuredPlumeTop(s, baseline){
+  const v = s[manualRefFieldKey('top')];
+  return v != null ? v : computeMeasuredPlumeTop(s, baseline);
+}
+
 function computeRefLinesFor(sondesFn, extra){
   // extra: 'plumetop' (nomes al gràfic d'ascens) -- els altres gràfics
   // nomes hi mostren ABLh/LCL. Les parcel·les es dibuixen a part com a
   // segments verticals (vegeu parcelAscentPlugin), nomes al gràfic de θᵥ.
+  // Cada línia porta sondId+kind+s perquè attachRefLineDragHandlers pugui
+  // identificar-la i editar-la.
   const sondes = sondesFn();
   const lines = [];
   const baseline = extra === 'plumetop' ? ambientRiseSpeedBaseline(sondes) : null;
   sondes.forEach(({s, color}) => {
-    const ablh = computeABLh(s);
-    const lcl = computeLCL(s);
-    if(ablh != null) lines.push({ value: ablh, color, label: 'ABLh' });
-    if(lcl != null) lines.push({ value: lcl, color, label: 'LCL' });
+    const ablh = effectiveABLh(s);
+    const lcl = effectiveLCL(s);
+    if(ablh != null) lines.push({ value: ablh, color, label: 'ABLh', sondId: s.sond_id, kind: 'ablh', s });
+    if(lcl != null) lines.push({ value: lcl, color, label: 'LCL', sondId: s.sond_id, kind: 'lcl', s });
 
     if(extra === 'plumetop' && s.tipus === 'columna'){
-      const top = computeMeasuredPlumeTop(s, baseline);
-      if(top != null) lines.push({ value: top, color, label: 'top' });
+      const top = effectiveMeasuredPlumeTop(s, baseline);
+      if(top != null) lines.push({ value: top, color, label: 'top', sondId: s.sond_id, kind: 'top', s });
     }
   });
   return lines;
@@ -3859,10 +3888,10 @@ function renderAnalysisViewPanel(){
   }
   const baseline = ambientRiseSpeedBaseline(sondes);
   const ambientEntry = sondes.find(({s}) => s.tipus === 'ambient');
-  const ambientAbl = ambientEntry ? computeABLh(ambientEntry.s) : null;
+  const ambientAbl = ambientEntry ? effectiveABLh(ambientEntry.s) : null;
 
   panel.innerHTML = sondes.map(({s, color}) => {
-    const abl = computeABLh(s);
+    const abl = effectiveABLh(s);
     const lclMean = computeLCL_ML(s);
     const parcelS = parcelAscentPath(s, 's');
     const parcelML = parcelAscentPath(s, 'ml');
@@ -3874,7 +3903,7 @@ function renderAnalysisViewPanel(){
       [t('analysis.lclMean'), fmtM(lclMean)],
     ];
     if(s.tipus === 'columna'){
-      rows.push([t('analysis.plumeTop'), fmtM(computeMeasuredPlumeTop(s, baseline))]);
+      rows.push([t('analysis.plumeTop'), fmtM(effectiveMeasuredPlumeTop(s, baseline))]);
     }
     rows.push([t('analysis.parcels'), `S ${fmtParcel(parcelS)} · ML ${fmtParcel(parcelML)} · MU ${fmtParcel(parcelMU)}`]);
 
@@ -3996,6 +4025,137 @@ document.getElementById('analysisBackLink').addEventListener('click', (e) => {
   showView('incendi');
   renderAllCharts();
 });
+
+// ------------------------------------------------------------
+// Arrossegar les línies ABLh/LCL/top a la vista d'anàlisi
+// ------------------------------------------------------------
+// Les 4 canvas (theta/rh/wind/rise) són elements fixos del HTML -- aixi que
+// els listeners s'enganxen UN sol cop (no a cada renderAnalysisView, que
+// recrea les instàncies de Chart.js pero no les canvas) i sempre miren
+// analysisCharts[chartKey] en viu, en comptes de capturar la instància de
+// Chart.js en tancament, perquè despres de redibuixar (p.ex. en canviar de
+// sonda) seguiin apuntant al grafic correcte.
+function redrawAnalysisOverlaysLive(){
+  ['theta', 'rh', 'wind', 'rise'].forEach(k => { if(analysisCharts[k]) analysisCharts[k].update('none'); });
+  renderAnalysisViewPanel();
+}
+
+async function saveManualRef(sondId, kind, value, s, previousValue){
+  let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
+  if(!password){
+    password = prompt(t('status.uploadPwPrompt')) || '';
+    if(!password){
+      s[manualRefFieldKey(kind)] = previousValue;
+      redrawAnalysisOverlaysLive();
+      return;
+    }
+  }
+  try{
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, action: 'edit_manual_ref', slug: currentSlug, sondId, kind, value })
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok){ throw new Error(data.error || t('status.serverError', { status: res.status })); }
+    // s'actualitza en viu des del principi de l'arrossegament (optimista);
+    // com que acabem de dir-li al servidor exactament aquest valor, no cal
+    // tornar a desxifrar tot l'incendi -- nomes en cas d'error es desfà.
+  } catch(err){
+    alert(t('status.manualRefFailed', { msg: err.message }));
+    s[manualRefFieldKey(kind)] = previousValue;
+    redrawAnalysisOverlaysLive();
+  }
+}
+
+function attachRefLineDragHandlers(canvasId, chartKey, sondesFn){
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  const TOL_PX = 7;
+  let dragging = null; // { sondId, kind, s, previousValue }
+
+  function liveChart(){ return analysisCharts[chartKey]; }
+  function extraKind(){ return chartKey === 'rise' ? 'plumetop' : undefined; }
+
+  function mouseYFromEvent(e){
+    const rect = canvas.getBoundingClientRect();
+    return e.clientY - rect.top;
+  }
+
+  function findLine(mouseYPix){
+    const chart = liveChart();
+    if(!chart) return null;
+    const yScale = chart.scales.y;
+    const lines = computeRefLinesFor(sondesFn, extraKind())
+      .filter(l => l.value != null && l.value >= yScale.min && l.value <= yScale.max);
+    let best = null, bestDist = Infinity;
+    lines.forEach(l => {
+      const yPix = yScale.getPixelForValue(l.value);
+      const dist = Math.abs(yPix - mouseYPix);
+      if(dist < bestDist){ bestDist = dist; best = l; }
+    });
+    return (best && bestDist <= TOL_PX) ? best : null;
+  }
+
+  function onMouseMove(e){
+    const yPix = mouseYFromEvent(e);
+    if(!dragging){
+      canvas.style.cursor = findLine(yPix) ? 'ns-resize' : '';
+      return;
+    }
+    const chart = liveChart();
+    if(!chart) return;
+    const yScale = chart.scales.y;
+    let newValue = yScale.getValueForPixel(yPix);
+    newValue = Math.max(yScale.min, Math.min(yScale.max, newValue));
+    dragging.s[manualRefFieldKey(dragging.kind)] = newValue;
+    redrawAnalysisOverlaysLive();
+  }
+
+  function onMouseDown(e){
+    if(e.button !== 0) return;
+    const hit = findLine(mouseYFromEvent(e));
+    if(!hit) return;
+    e.preventDefault();
+    dragging = {
+      sondId: hit.sondId, kind: hit.kind, s: hit.s,
+      previousValue: hit.s[manualRefFieldKey(hit.kind)] != null ? hit.s[manualRefFieldKey(hit.kind)] : null
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  async function onMouseUp(){
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    if(!dragging) return;
+    const { sondId, kind, s, previousValue } = dragging;
+    dragging = null;
+    const newValue = s[manualRefFieldKey(kind)];
+    if(newValue == null) return;
+    if(previousValue != null && Math.round(newValue) === Math.round(previousValue)) return; // sense canvi real
+    await saveManualRef(sondId, kind, Math.round(newValue), s, previousValue);
+  }
+
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseleave', () => { if(!dragging) canvas.style.cursor = ''; });
+  canvas.addEventListener('dblclick', async (e) => {
+    const hit = findLine(mouseYFromEvent(e));
+    if(!hit) return;
+    const key = manualRefFieldKey(hit.kind);
+    if(hit.s[key] == null) return; // ja és automàtic
+    const previousValue = hit.s[key];
+    hit.s[key] = null;
+    redrawAnalysisOverlaysLive();
+    await saveManualRef(hit.sondId, hit.kind, null, hit.s, previousValue);
+  });
+}
+
+attachRefLineDragHandlers('analysisChartTheta', 'theta', analysisViewSondes);
+attachRefLineDragHandlers('analysisChartRh', 'rh', analysisViewSondes);
+attachRefLineDragHandlers('analysisChartWind', 'wind', analysisViewSondes);
+attachRefLineDragHandlers('analysisChartRise', 'rise', analysisViewSondes);
 
 // ============================================================
 // VISTA: pujar sonda
