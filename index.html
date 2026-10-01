@@ -2142,23 +2142,19 @@ function computeMeasuredPlumeTop(s, baseline){
   // baixada) perquè una aturada llarga entre dos pols -- no nomes una
   // breu caiguda -- tambe quedi coberta.
   const lookaheadM = 1000;
-  const pulseThreshold = baseline + 1.5;
+  // Marge ampli (baseline+2.2, no +1.5): un llindar massa baix confonia un
+  // repunt febre de turbulencia/cisallament ambiental (fins a ~2x baseline)
+  // amb un segon pols convectiu real. Validat amb dades reals de tres
+  // sondes: amb +1.5 un repunt ambiental de ~4.2 m/s (2.1x baseline) feia
+  // allargar el top molt per sobre d'on tocava; amb +2.2 aquest repunt ja
+  // no compta com a "pols", pero els pols convectius genuïns (quasi sempre
+  // >5 m/s en aquests casos) segueixen detectant-se correctament.
+  const pulseThreshold = baseline + 2.2;
   // A mes de la mitjana, cap punt de la finestra pot tornar a pujar gaire
   // per sobre del llindar individual: una mitjana baixa pot amagar un
   // repunt curt (la cua d'un segon pols que encara no s'ha acabat
   // d'esvair) que un ull entrenat no consideraria estabilitzacio real.
   const maxWindowPoint = pointThreshold + 0.1;
-  // Si la confirmacio cau clarament per sota de l'ABLh (no nomes a tocar),
-  // es un senyal fisic fort que la columna ha quedat tapada dins la capa
-  // limit sense punxar-la -- un cas conegut i normal (prototip de
-  // superficie), no una excepcio a desconfiar. En aquest cas NO s'aplica
-  // el look-ahead de "segon pols": qualsevol oscil·lacio per sobre de
-  // l'ABLh és mes probable que sigui turbulencia/cisallament ambiental
-  // que no pas una continuacio real de la ploma. Si la confirmacio cau a
-  // tocar o per sobre de l'ABLh, es manté el look-ahead normal (la ploma
-  // pot perfectament punxar per sobre de l'ABLh, vegeu Taula 3).
-  const ablh = computeABLh(s);
-  const ablhMarginM = 200;
 
   for(let i = peakIdx; i < raw.length; i++){
     if(smoothed[i] > pointThreshold) continue; // nomes es candidat el punt on ja s'esta per sota
@@ -2178,15 +2174,12 @@ function computeMeasuredPlumeTop(s, baseline){
     if(weightedSum / totalLenM > maxWindowMean) continue;
     if(windowMax > maxWindowPoint) continue; // repunt curt dins la finestra -- encara no es definitiu
 
-    const wellBelowAblh = ablh != null && raw[i].alt_msl_m <= ablh - ablhMarginM;
-    if(!wellBelowAblh){
-      let sawFurtherPulse = false, k = i;
-      while(k < raw.length && raw[k].alt_msl_m - raw[i].alt_msl_m < lookaheadM){
-        if(smoothed[k] > pulseThreshold){ sawFurtherPulse = true; break; }
-        k++;
-      }
-      if(sawFurtherPulse) continue; // encara hi ha un pols real mes amunt -- no es la baixada definitiva
+    let sawFurtherPulse = false, k = i;
+    while(k < raw.length && raw[k].alt_msl_m - raw[i].alt_msl_m < lookaheadM){
+      if(smoothed[k] > pulseThreshold){ sawFurtherPulse = true; break; }
+      k++;
     }
+    if(sawFurtherPulse) continue; // encara hi ha un pols real mes amunt -- no es la baixada definitiva
 
     return raw[i].alt_msl_m;
   }
