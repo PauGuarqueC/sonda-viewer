@@ -1768,11 +1768,14 @@ function computeABLh_RiB(s){
   // l'envolten per mes precisio. Fa servir alcada AGL per al calcul (com es
   // habitual), i torna el resultat en ASL per dibuixar-lo al mateix eix
   // que la resta. Punt feble conegut: amb vent fluix i variable (freqüent
-  // just per sobre d'un incendi), Ri_b pot disparar-se per una diferencia
-  // de theta minima nomes perquè el vent al denominador és gairebé zero,
-  // donant una "inversio" massa amunt o massa avall que no es correspon
-  // amb el que es veu al perfil d'humitat -- per aixo computeABLh la
-  // contrasta amb computeABLh_RH.
+  // just per sobre d'un incendi), una sola ratxa gairebe nul·la pot
+  // disparar Ri_b espuriament nomes perquè el vent al denominador és
+  // gairebé zero -- es suavitza el vent abans de fer-lo servir perquè
+  // aquest soroll puntual no en falsegi el resultat. A mes, un primer
+  // creuament del llindar nomes es dona per bo si Ri_b s'hi manté per
+  // sobre una mica mes amunt (CONFIRM_M): si es nomes un pic puntual, es
+  // descarta i es segueix buscant mes amunt -- abans el metode retornava
+  // directament en el primer creuament, encara que fos soroll.
   const profile = (s.profile || []).filter(p => p.theta_v_k != null && p.height_agl_m != null && p.alt_msl_m != null);
   if(profile.length < 3) return null;
   const sfc = profile[0];
@@ -1782,25 +1785,50 @@ function computeABLh_RiB(s){
   const MIN_SPEED = 0.5; // evita dividir per gairebe-zero a tocar de superficie
   const MIN_ABLH_AGL = 150; // per sota d'aixo, amb vent fluix es mes probable
                              // que sigui soroll del metode que una capa real
+  const CONFIRM_M = 150; // un cop superat el llindar, Ri_b s'hi ha de mantenir
+                          // (sense tornar a baixar gaire) al llarg d'aquesta
+                          // distancia perque es consideri una inversio real
+  const MIN_LOCAL_GRAD = 0.0025; // K/m (2.5 K/km): el nombre de Ri_b acumula
+                                  // amb l'alçada encara que la capa sigui
+                                  // gairebé isoterma (quasi-ben mesclada), de
+                                  // manera que amb prou recorregut pot acabar
+                                  // creuant el llindar sense que hi hagi cap
+                                  // inversio real -- es descarta un creuament
+                                  // si no ve acompanyat d'un salt de theta_v
+                                  // local prou fort (una inversio real sol
+                                  // ser >5 K/km en aquestes dades; una capa
+                                  // ben mesclada, ~1 K/km)
 
-  const riAt = (p) => {
+  const windSmoothed = smoothSeries(profile.map(p => p.wind_speed_ms || 0), 5);
+  const ris = profile.map((p, i) => {
     const dz = p.height_agl_m - sfc.height_agl_m;
     if(dz <= 0) return null;
-    const speed = Math.max(p.wind_speed_ms || 0, MIN_SPEED);
+    const speed = Math.max(windSmoothed[i], MIN_SPEED);
     return G * (p.theta_v_k - thetaVsfc) * dz / (thetaVsfc * speed * speed);
-  };
+  });
 
   let riPrev = 0;
   for(let i = 1; i < profile.length; i++){
-    const ri = riAt(profile[i]);
+    const ri = ris[i];
     if(ri == null) continue;
     if(ri >= RI_CRIT){
-      const prev = profile[i - 1];
-      const frac = (ri === riPrev) ? 0 : (RI_CRIT - riPrev) / (ri - riPrev);
-      const clampedFrac = Math.max(0, Math.min(1, frac));
-      const heightAgl = prev.height_agl_m + clampedFrac * (profile[i].height_agl_m - prev.height_agl_m);
-      if(heightAgl < MIN_ABLH_AGL) return null; // massa a tocar de terra, probablement soroll
-      return prev.alt_msl_m + clampedFrac * (profile[i].alt_msl_m - prev.alt_msl_m);
+      const prev0 = profile[i - 1];
+      const localGrad = (profile[i].theta_v_k - prev0.theta_v_k) / (profile[i].height_agl_m - prev0.height_agl_m);
+      let confirmed = localGrad >= MIN_LOCAL_GRAD;
+      for(let j = i + 1; confirmed && j < profile.length && profile[j].height_agl_m - profile[i].height_agl_m < CONFIRM_M; j++){
+        if(ris[j] != null && ris[j] < RI_CRIT * 0.6){ confirmed = false; break; }
+      }
+      if(confirmed){
+        const prev = profile[i - 1];
+        const frac = (ri === riPrev) ? 0 : (RI_CRIT - riPrev) / (ri - riPrev);
+        const clampedFrac = Math.max(0, Math.min(1, frac));
+        const heightAgl = prev.height_agl_m + clampedFrac * (profile[i].height_agl_m - prev.height_agl_m);
+        if(heightAgl >= MIN_ABLH_AGL){ // massa a tocar de terra, probablement soroll
+          return prev.alt_msl_m + clampedFrac * (profile[i].alt_msl_m - prev.alt_msl_m);
+        }
+      }
+      // creuament no confirmat (o massa a tocar de terra): no abandonis,
+      // segueix buscant mes amunt en comptes de tornar null directament
     }
     riPrev = ri;
   }
@@ -1829,21 +1857,20 @@ function computeABLh_RH(s){
 }
 
 function computeABLh(s){
-  // Combina els dos mètodes anteriors: Ri_b és mes precís quan el vent es
-  // prou fort per no dominar el soroll, pero pot desviar-se amb vent
-  // fluix i variable; el gradient de RH es mes robust en aquest cas
-  // perquè nomes depèn d'una variable i es suavitza abans. Si Ri_b no
-  // troba res, o si difereix molt del que marca la RH (senyal que Ri_b ha
-  // trobat una inversio espúria, no la capa límit real), es fa servir el
-  // resultat de RH; si tots dos coincideixen raonablement, es queda amb
-  // el de Ri_b (mes precís al ser quantitatiu, no nomes el punt de
-  // gradient màxim).
+  // Combina els dos mètodes anteriors: es prefereix Ri_b sempre que trobi
+  // una inversio confirmada (vegeu computeABLh_RiB), perquè es quantitatiu
+  // i es basa en una magnitud fisica (theta_v) mes estable que el gradient
+  // de RH -- aquest ultim, en sondes properes a un incendi, sovint marca
+  // el seu gradient mes fort molt per sobre del tap real (contaminat per
+  // l'estructura d'humitat de la propia ploma), no a la inversio -- es va
+  // provar de descartar Ri_b quan diferia molt de RH, pero amb dades
+  // reals aixo rebutjava sistematicament taps reals i curts (trobats
+  // correctament per Ri_b) en favor d'un valor de RH molt mes amunt i
+  // erroni. El gradient de RH nomes es fa servir quan Ri_b no troba cap
+  // inversio dins el rang mesurat.
   const riB = computeABLh_RiB(s);
-  const rh = computeABLh_RH(s);
-  if(riB == null) return rh;
-  if(rh == null) return riB;
-  const diverge = Math.abs(riB - rh) > Math.max(400, rh * 0.5);
-  return diverge ? rh : riB;
+  if(riB != null) return riB;
+  return computeABLh_RH(s);
 }
 
 function lclFromTTd(tC, tdC, pMb){
