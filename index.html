@@ -2138,24 +2138,34 @@ function computeMeasuredPlumeTop(s, baseline){
   // mira una mica mes amunt (fins a lookaheadM des de l'inici de la
   // finestra) per si hi torna a haver una pujada clarament per sobre de
   // soroll (pulseThreshold) -- si es així, encara no és la definitiva.
-  const lookaheadM = 400;
+  // lookaheadM es prou gran (1000m, 1200m en total des de l'inici de la
+  // baixada) perquè una aturada llarga entre dos pols -- no nomes una
+  // breu caiguda -- tambe quedi coberta.
+  const lookaheadM = 1000;
   const pulseThreshold = baseline + 1.5;
+  // A mes de la mitjana, cap punt de la finestra pot tornar a pujar gaire
+  // per sobre del llindar individual: una mitjana baixa pot amagar un
+  // repunt curt (la cua d'un segon pols que encara no s'ha acabat
+  // d'esvair) que un ull entrenat no consideraria estabilitzacio real.
+  const maxWindowPoint = pointThreshold + 0.1;
 
   for(let i = peakIdx; i < raw.length; i++){
     if(smoothed[i] > pointThreshold) continue; // nomes es candidat el punt on ja s'esta per sota
     if(i > peakIdx && smoothed[i - 1] <= pointThreshold) continue; // no es l'inici d'una baixada -- ja s'havia avaluat aquest tram
 
-    let weightedSum = 0, totalLenM = 0, j = i;
+    let weightedSum = 0, totalLenM = 0, windowMax = -Infinity, j = i;
     while(j < raw.length - 1 && raw[j].alt_msl_m - raw[i].alt_msl_m < windowM){
       const dz = raw[j + 1].alt_msl_m - raw[j].alt_msl_m;
       weightedSum += (smoothed[j] + smoothed[j + 1]) / 2 * dz; // mitjana trapezoidal del segment
       totalLenM += dz;
+      windowMax = Math.max(windowMax, smoothed[j], smoothed[j + 1]);
       j++;
     }
     // si no queden prou dades per omplir la finestra, no es pot confirmar
     // amb garanties -- millor no precipitar-se
     if(totalLenM < windowM * 0.6) continue;
     if(weightedSum / totalLenM > maxWindowMean) continue;
+    if(windowMax > maxWindowPoint) continue; // repunt curt dins la finestra -- encara no es definitiu
 
     let sawFurtherPulse = false, k = i;
     while(k < raw.length && raw[k].alt_msl_m - raw[i].alt_msl_m < lookaheadM){
