@@ -2408,39 +2408,43 @@ function horizontalRefLinesPlugin(getLines){
     afterDraw(chart){
       const xScale = chart.scales.x, yScale = chart.scales.y;
       const ctx = chart.ctx;
-      // agrupa per alçada arrodonida perquè les etiquetes que cauen molt
-      // juntes (p.ex. dues sondes amb ABLh gairebé igual) no es superposin
-      const byY = new Map();
-      getLines().forEach(line => {
-        if(line.value == null || line.value < yScale.min || line.value > yScale.max) return;
-        const yPix = Math.round(yScale.getPixelForValue(line.value));
-        if(!byY.has(yPix)) byY.set(yPix, []);
-        byY.get(yPix).push(line);
-      });
-      const rowsUsed = [];
-      [...byY.entries()].sort((a, b) => a[0] - b[0]).forEach(([yPix, group]) => {
-        group.forEach((line, gi) => {
-          let y = yPix + gi * 10; // separa lleugerament si coincideixen exactament
-          while(rowsUsed.some(u => Math.abs(u - y) < 9)) y += 9;
-          rowsUsed.push(y);
+      const lines = getLines()
+        .filter(line => line.value != null && line.value >= yScale.min && line.value <= yScale.max)
+        .map(line => ({ ...line, yPix: yScale.getPixelForValue(line.value) }))
+        .sort((a, b) => a.yPix - b.yPix);
 
-          ctx.save();
-          ctx.strokeStyle = line.color;
-          ctx.fillStyle = line.color;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([4, 3]);
-          ctx.beginPath();
-          ctx.moveTo(xScale.left, y);
-          ctx.lineTo(xScale.right, y);
-          ctx.stroke();
-          if(line.label){
-            ctx.setLineDash([]);
-            ctx.font = '9px "Roboto Mono", monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText(line.label, xScale.right + 3, y + 3);
-          }
-          ctx.restore();
-        });
+      // Cada línia es dibuixa sempre a la seva alçada real -- mai es
+      // desplaça, encara que caigui molt a prop d'una altra (p.ex. ABLh i
+      // top separats per nomes 40m): desplaçar la línia en si falsejaria
+      // visualment l'alçada que representa.
+      lines.forEach(line => {
+        ctx.save();
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(xScale.left, line.yPix);
+        ctx.lineTo(xScale.right, line.yPix);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // Nomes el TEXT de l'etiqueta es pot desplaçar lleugerament perquè
+      // dues etiquetes que cauen molt juntes no se superposin -- això no
+      // afecta la posició de la línia, nomes on es llegeix el rètol.
+      const rowsUsed = [];
+      lines.forEach(line => {
+        if(!line.label) return;
+        let labelY = line.yPix;
+        while(rowsUsed.some(u => Math.abs(u - labelY) < 9)) labelY += 9;
+        rowsUsed.push(labelY);
+
+        ctx.save();
+        ctx.fillStyle = line.color;
+        ctx.font = '9px "Roboto Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(line.label, xScale.right + 3, labelY + 3);
+        ctx.restore();
       });
     }
   };
