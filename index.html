@@ -2130,6 +2130,17 @@ function computeMeasuredPlumeTop(s, baseline){
     if(smoothed[i] > smoothed[peakIdx]) peakIdx = i;
   }
 
+  // Un cop es compleix la mitjana de la finestra curta, encara cal
+  // comprovar que no sigui només una aturada entre dos pols convectius:
+  // amb una finestra de nomes windowM metres, una ploma amb dos bonys
+  // (un de gran seguit, després d'una caiguda, d'un altre mes amunt) pot
+  // "colar" la caiguda intermèdia com si fos l'estabilització final. Es
+  // mira una mica mes amunt (fins a lookaheadM des de l'inici de la
+  // finestra) per si hi torna a haver una pujada clarament per sobre de
+  // soroll (pulseThreshold) -- si es així, encara no és la definitiva.
+  const lookaheadM = 400;
+  const pulseThreshold = baseline + 1.5;
+
   for(let i = peakIdx; i < raw.length; i++){
     if(smoothed[i] > pointThreshold) continue; // nomes es candidat el punt on ja s'esta per sota
     if(i > peakIdx && smoothed[i - 1] <= pointThreshold) continue; // no es l'inici d'una baixada -- ja s'havia avaluat aquest tram
@@ -2144,7 +2155,16 @@ function computeMeasuredPlumeTop(s, baseline){
     // si no queden prou dades per omplir la finestra, no es pot confirmar
     // amb garanties -- millor no precipitar-se
     if(totalLenM < windowM * 0.6) continue;
-    if(weightedSum / totalLenM <= maxWindowMean) return raw[i].alt_msl_m;
+    if(weightedSum / totalLenM > maxWindowMean) continue;
+
+    let sawFurtherPulse = false, k = i;
+    while(k < raw.length && raw[k].alt_msl_m - raw[i].alt_msl_m < lookaheadM){
+      if(smoothed[k] > pulseThreshold){ sawFurtherPulse = true; break; }
+      k++;
+    }
+    if(sawFurtherPulse) continue; // encara hi ha un pols real mes amunt -- no es la baixada definitiva
+
+    return raw[i].alt_msl_m;
   }
   // mai s'ha confirmat una estabilització majoritària -- o bé la velocitat
   // d'ascens no supera mai el llindar (no hi ha ploma clara), o bé la
