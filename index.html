@@ -419,6 +419,7 @@
         <span class="hint" data-i18n="analysis.ambientHint">+ sondes ambient actives al perfil, per comparar</span>
         <div id="analysisAmbientToggles" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"></div>
       </div>
+      <div id="analysisRefStatus" style="font-family:var(--font-mono); font-size:11px; color:var(--text-dim); min-height:14px; margin:2px 0 4px;"></div>
       <div class="profile-strip">
         <div class="block">
           <h4 data-i18n="chart.thetaTitle">θᵥ potencial virtual (K)</h4>
@@ -611,6 +612,13 @@ const I18N = {
     'status.deleteFailed': 'No s\'ha pogut eliminar la sonda: {msg}',
     'status.elevFailed': 'No s\'ha pogut corregir l\'alçada: {msg}',
     'status.manualRefFailed': 'No s\'ha pogut desar la correcció manual: {msg}',
+    'analysis.refSaving': 'Desant la correcció…',
+    'analysis.refSaved': 'Desat ✓',
+    'analysis.refReset': 'Tornat a l\'automàtic ✓',
+    'analysis.refPendingSet': '{kind} a {value} m (sense desar)',
+    'analysis.refPendingReset': 'Treure la correcció de {kind} (sense desar)',
+    'analysis.refConfirmBtn': 'Desa',
+    'analysis.refCancelBtn': 'Cancel·la',
     'status.kmzNoKml': 'el .kmz no conté cap fitxer .kml a dins',
     'status.kmlInvalid': 'KML/KMZ no vàlid: {msg}',
     'status.fileNotJson': 'Fitxer no és JSON vàlid.',
@@ -777,6 +785,13 @@ const I18N = {
     'status.deleteFailed': 'Could not delete the sonde: {msg}',
     'status.elevFailed': 'Could not correct the elevation: {msg}',
     'status.manualRefFailed': 'Could not save the manual correction: {msg}',
+    'analysis.refSaving': 'Saving correction…',
+    'analysis.refSaved': 'Saved ✓',
+    'analysis.refReset': 'Reset to automatic ✓',
+    'analysis.refPendingSet': '{kind} to {value} m (not saved)',
+    'analysis.refPendingReset': 'Remove the {kind} correction (not saved)',
+    'analysis.refConfirmBtn': 'Save',
+    'analysis.refCancelBtn': 'Cancel',
     'status.kmzNoKml': 'the .kmz does not contain a .kml file inside',
     'status.kmlInvalid': 'Invalid KML/KMZ: {msg}',
     'status.fileNotJson': 'File is not valid JSON.',
@@ -4017,11 +4032,13 @@ function openAnalysisView(){
 
 document.getElementById('openAnalysisBtn').addEventListener('click', openAnalysisView);
 document.getElementById('analysisColumnaSelect').addEventListener('change', function(){
+  cancelPendingRefChange();
   analysisColumnaId = this.value || null;
   renderAnalysisView();
 });
 document.getElementById('analysisBackLink').addEventListener('click', (e) => {
   e.preventDefault();
+  cancelPendingRefChange();
   showView('incendi');
   renderAllCharts();
 });
@@ -4040,6 +4057,71 @@ function redrawAnalysisOverlaysLive(){
   renderAnalysisViewPanel();
 }
 
+let refStatusTimer = null;
+function setRefStatus(msg, autoClearMs){
+  const el = document.getElementById('analysisRefStatus');
+  if(!el) return;
+  el.textContent = msg || '';
+  if(refStatusTimer){ clearTimeout(refStatusTimer); refStatusTimer = null; }
+  if(msg && autoClearMs){
+    refStatusTimer = setTimeout(() => { el.textContent = ''; refStatusTimer = null; }, autoClearMs);
+  }
+}
+
+// L'arrossegament NOMÉS actualitza la previsualització local (per poder
+// provar com queda sense generar un desat -- i per tant un commit al repo --
+// cada cop que es deixa anar el ratolí): el canvi queda "pendent" fins que
+// es prem "Desa" (o es cancel·la), que és quan realment es crida
+// saveManualRef i es parla amb el servidor.
+let pendingRefChange = null; // { sondId, kind, s, previousValue, newValue }
+
+function revertPendingRefLocal(){
+  if(!pendingRefChange) return;
+  pendingRefChange.s[manualRefFieldKey(pendingRefChange.kind)] = pendingRefChange.previousValue;
+}
+
+function renderPendingRefUI(){
+  const el = document.getElementById('analysisRefStatus');
+  if(!el) return;
+  if(refStatusTimer){ clearTimeout(refStatusTimer); refStatusTimer = null; }
+  if(!pendingRefChange){ el.innerHTML = ''; return; }
+  const { kind, newValue } = pendingRefChange;
+  const desc = newValue == null
+    ? t('analysis.refPendingReset', { kind: kind.toUpperCase() })
+    : t('analysis.refPendingSet', { kind: kind.toUpperCase(), value: Math.round(newValue) });
+  el.innerHTML = `<span>${desc}</span> ` +
+    `<button type="button" id="refConfirmBtn" style="font-family:var(--font-mono); font-size:11px; padding:1px 7px; margin-left:4px; cursor:pointer;">${t('analysis.refConfirmBtn')}</button> ` +
+    `<button type="button" id="refCancelBtn" style="font-family:var(--font-mono); font-size:11px; padding:1px 7px; margin-left:3px; cursor:pointer;">${t('analysis.refCancelBtn')}</button>`;
+  document.getElementById('refConfirmBtn').addEventListener('click', confirmPendingRefChange);
+  document.getElementById('refCancelBtn').addEventListener('click', cancelPendingRefChange);
+}
+
+function startPendingRefChange(sondId, kind, s, previousValue, newValue){
+  if(pendingRefChange && (pendingRefChange.sondId !== sondId || pendingRefChange.kind !== kind)){
+    revertPendingRefLocal(); // nomes un canvi pendent alhora -- es desfà l'anterior
+  }
+  pendingRefChange = { sondId, kind, s, previousValue, newValue };
+  s[manualRefFieldKey(kind)] = newValue;
+  redrawAnalysisOverlaysLive();
+  renderPendingRefUI();
+}
+
+async function confirmPendingRefChange(){
+  if(!pendingRefChange) return;
+  const { sondId, kind, s, previousValue, newValue } = pendingRefChange;
+  pendingRefChange = null;
+  renderPendingRefUI();
+  await saveManualRef(sondId, kind, newValue, s, previousValue);
+}
+
+function cancelPendingRefChange(){
+  if(!pendingRefChange) return;
+  revertPendingRefLocal();
+  pendingRefChange = null;
+  redrawAnalysisOverlaysLive();
+  renderPendingRefUI();
+}
+
 async function saveManualRef(sondId, kind, value, s, previousValue){
   let password = localStorage.getItem(UPLOAD_PW_KEY) || '';
   if(!password){
@@ -4050,6 +4132,7 @@ async function saveManualRef(sondId, kind, value, s, previousValue){
       return;
     }
   }
+  setRefStatus(t('analysis.refSaving'));
   try{
     const res = await fetch(WORKER_URL, {
       method: 'POST',
@@ -4061,7 +4144,9 @@ async function saveManualRef(sondId, kind, value, s, previousValue){
     // s'actualitza en viu des del principi de l'arrossegament (optimista);
     // com que acabem de dir-li al servidor exactament aquest valor, no cal
     // tornar a desxifrar tot l'incendi -- nomes en cas d'error es desfà.
+    setRefStatus(value == null ? t('analysis.refReset') : t('analysis.refSaved'), 2000);
   } catch(err){
+    setRefStatus('');
     alert(t('status.manualRefFailed', { msg: err.message }));
     s[manualRefFieldKey(kind)] = previousValue;
     redrawAnalysisOverlaysLive();
@@ -4117,15 +4202,20 @@ function attachRefLineDragHandlers(canvasId, chartKey, sondesFn){
     const hit = findLine(mouseYFromEvent(e));
     if(!hit) return;
     e.preventDefault();
-    dragging = {
-      sondId: hit.sondId, kind: hit.kind, s: hit.s,
-      previousValue: hit.s[manualRefFieldKey(hit.kind)] != null ? hit.s[manualRefFieldKey(hit.kind)] : null
-    };
+    // si ja hi ha un canvi pendent d'aquesta mateixa línia (s'està
+    // reajustant abans de confirmar), es parteix del seu valor ORIGINAL
+    // (previousValue), no de la previsualització encara sense desar
+    const existingPending = (pendingRefChange && pendingRefChange.sondId === hit.sondId && pendingRefChange.kind === hit.kind)
+      ? pendingRefChange : null;
+    const previousValue = existingPending
+      ? existingPending.previousValue
+      : (hit.s[manualRefFieldKey(hit.kind)] != null ? hit.s[manualRefFieldKey(hit.kind)] : null);
+    dragging = { sondId: hit.sondId, kind: hit.kind, s: hit.s, previousValue };
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }
 
-  async function onMouseUp(){
+  function onMouseUp(){
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     if(!dragging) return;
@@ -4133,22 +4223,34 @@ function attachRefLineDragHandlers(canvasId, chartKey, sondesFn){
     dragging = null;
     const newValue = s[manualRefFieldKey(kind)];
     if(newValue == null) return;
-    if(previousValue != null && Math.round(newValue) === Math.round(previousValue)) return; // sense canvi real
-    await saveManualRef(sondId, kind, Math.round(newValue), s, previousValue);
+    if(previousValue != null && Math.round(newValue) === Math.round(previousValue)){
+      // ha tornat exactament al valor original -- no deixa canvi pendent
+      if(pendingRefChange && pendingRefChange.sondId === sondId && pendingRefChange.kind === kind){
+        pendingRefChange = null;
+        renderPendingRefUI();
+      }
+      return;
+    }
+    startPendingRefChange(sondId, kind, s, previousValue, Math.round(newValue));
   }
 
   canvas.addEventListener('mousedown', onMouseDown);
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mouseleave', () => { if(!dragging) canvas.style.cursor = ''; });
-  canvas.addEventListener('dblclick', async (e) => {
+  canvas.addEventListener('dblclick', (e) => {
     const hit = findLine(mouseYFromEvent(e));
     if(!hit) return;
+    // doble clic sobre una línia amb un canvi pendent: cancel·la la
+    // previsualització (torna a l'original sense demanar confirmació,
+    // ja que encara no s'havia desat res al servidor)
+    if(pendingRefChange && pendingRefChange.sondId === hit.sondId && pendingRefChange.kind === hit.kind){
+      cancelPendingRefChange();
+      return;
+    }
     const key = manualRefFieldKey(hit.kind);
-    if(hit.s[key] == null) return; // ja és automàtic
     const previousValue = hit.s[key];
-    hit.s[key] = null;
-    redrawAnalysisOverlaysLive();
-    await saveManualRef(hit.sondId, hit.kind, null, hit.s, previousValue);
+    if(previousValue == null) return; // ja és automàtic, no hi ha res a treure
+    startPendingRefChange(hit.sondId, hit.kind, hit.s, previousValue, null);
   });
 }
 
