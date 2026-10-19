@@ -77,6 +77,24 @@ def already_processed(slug, sond_id):
     return any(s["sond_id"] == sond_id for s in data.get("sondes", []))
 
 
+def was_deleted_by_user(slug, sond_id, batch_id):
+    """True si la sonda va ser esborrada des de la pàgina (el worker l'apunta a
+    `sondes_ignorades` dins les dades de l'incendi).
+
+    Només s'aplica quan el zip porta VÀRIES sondes (batch_id != sond_id): en
+    aquest cas el worker no pot esborrar el zip d'origen, perquè el seu nom no
+    coincideix amb l'ID de la sonda, i sense això la sonda tornaria a aparèixer
+    a cada execució. Si el zip és d'una sola sonda (batch_id == sond_id) el
+    worker ja n'esborra els fitxers d'entrada, així que tornar-la a pujar
+    després d'arreglar-la funciona amb normalitat."""
+    if batch_id == sond_id:
+        return False
+    data = read_encrypted_json(DATA_DIR / f"{slug}.json.enc", None)
+    if data is None:
+        return False
+    return sond_id in data.get("sondes_ignorades", [])
+
+
 def update_incendi(slug, incendi_nom, sonda_data):
     path = DATA_DIR / f"{slug}.json.enc"
     data = read_encrypted_json(path, {"incendi": incendi_nom, "sondes": []})
@@ -197,6 +215,9 @@ def main():
         incendi_data = None
         for sonda_data in sonda_list:
             sond_id = sonda_data["sond_id"]
+            if was_deleted_by_user(slug, sond_id, batch_id):
+                print(f"[debug] {sond_id} esborrada manualment des de la pàgina, l'ignoro")
+                continue
             if already_processed(slug, sond_id):
                 print(f"[debug] {sond_id} ja processat anteriorment, l'ignoro")
                 continue
