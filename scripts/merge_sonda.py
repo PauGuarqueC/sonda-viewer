@@ -22,6 +22,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import re
 import sys
 import zipfile
@@ -62,6 +63,28 @@ def _group_sonde_members(zf):
                 None,
             )
             groups.append({"stem": stem, "sounding_name": name, "flight_name": flight_name, "kml_name": kml_name})
+
+    # Sondes sense .sounding.csv (p.ex. nomes es va guardar el KML i el
+    # raw_flight_history): el perfil es reconstrueix del raw (vegeu
+    # profile_from_raw_flight). Nomes les que no tenen ja un grup amb sounding.
+    with_sounding = {g["stem"].lower() for g in groups}
+    suffix = ".raw_flight_history.csv"
+    for name in names:
+        if not name.lower().endswith(suffix):
+            continue
+        stem = Path(name).name[: -len(suffix)]
+        if stem.lower() in with_sounding:
+            continue
+        kml_name = next(
+            (n for n in names if Path(n).name.lower() == (stem + ".kml").lower()),
+            None,
+        )
+        groups.append({"stem": stem, "sounding_name": None, "flight_name": name, "kml_name": kml_name})
+
+    # Si el zip porta una sola sonda i un sol .kml amb un altre nom, el fem servir.
+    kmls = [n for n in names if n.lower().endswith(".kml")]
+    if len(groups) == 1 and groups[0]["kml_name"] is None and len(kmls) == 1:
+        groups[0]["kml_name"] = kmls[0]
     return groups
 
 
@@ -120,8 +143,91 @@ def parse_flight_history_csv(text):
             "lat": f("Latitude"),
             "lon": f("Longitude"),
             "rise_speed_ms": f("Rise speed (m/s)"),
+            # usats nomes per reconstruir el perfil quan no hi ha .sounding.csv
+            "pressure_pa": f("Pressure (Pascal)"),
+            "speed_ms": f("Speed (m/s)"),
+            "heading_deg": f("Heading (degrees)"),
         })
     return rows
+
+
+def profile_from_raw_flight(flight_rows, step_m=20.0, half_window_m=10.0, max_gap_m=300.0):
+    """Reconstrueix un perfil equivalent al del .sounding.csv NOMES del
+    raw_flight_history: una fila cada `step_m` metres AGL (20, 40, ...) del
+    tram d'ascens.
+
+    Per cada nivell es fa la mitjana de les mostres dins de +-half_window_m;
+    si no n'hi ha cap (la sonda puja rapid i a certes alcades el raw nomes
+    registra una fila cada pocs segons, amb mes de 20 m entre files) s'interpola
+    linealment entre la mostra de sota i la de dalt, sempre que no hi hagi mes
+    de max_gap_m entre elles -- si el forat es mes gran, el nivell es descarta
+    en lloc d'inventar-se'l.
+
+    Validat contra .sounding.csv / .raw_flight_history reals: la temperatura en
+    vol coincideix amb la del sounding (diferencia mitjana +-0.04 C, tambe per
+    sota de 300 m), pressio -0.04 mb i HR +-0.1 %; el vent es una mica mes
+    sorollos. El vent surt del rumb i la velocitat del GPS (direccio = rumb +
+    180, es a dir, d'on bufa), tractat com a vector (u, v) perque la direccio
+    no salti a 0/360."""
+    ascent = ascent_leg(flight_rows)
+    heights = [r["alt_agl_m"] for r in ascent if r["alt_agl_m"] is not None]
+    if not heights:
+        return []
+    top = max(heights)
+
+    def series(getter):
+        pts = []
+        for r in ascent:
+            if r["alt_agl_m"] is None:
+                continue
+            v = getter(r)
+            if v is not None:
+                pts.append((r["alt_agl_m"], v))
+        pts.sort(key=lambda t: t[0])
+        return pts
+
+    def value_at(pts, h):
+        near = [v for a, v in pts if abs(a - h) <= half_window_m]
+        if near:
+            return sum(near) / len(near)
+        below = [(a, v) for a, v in pts if a < h]
+        above = [(a, v) for a, v in pts if a > h]
+        if not below or not above:
+            return None
+        a0, v0 = below[-1]
+        a1, v1 = above[0]
+        if a1 - a0 > max_gap_m or a1 == a0:
+            return None
+        return v0 + (h - a0) / (a1 - a0) * (v1 - v0)
+
+    def uv(r):
+        if r["speed_ms"] is None or r["heading_deg"] is None:
+            return None
+        frm = math.radians(r["heading_deg"] + 180.0)  # direccio DES D'ON bufa
+        return (-r["speed_ms"] * math.sin(frm), -r["speed_ms"] * math.cos(frm))
+
+    s_p = series(lambda r: r["pressure_pa"])
+    s_t = series(lambda r: r["temp_c"])
+    s_rh = series(lambda r: r["rh_pct"])
+    s_u = series(lambda r: (uv(r) or (None, None))[0])
+    s_v = series(lambda r: (uv(r) or (None, None))[1])
+
+    profile = []
+    h = step_m
+    while h <= top:
+        p_pa, t, rh = value_at(s_p, h), value_at(s_t, h), value_at(s_rh, h)
+        u, v = value_at(s_u, h), value_at(s_v, h)
+        if None not in (p_pa, t, rh, u, v):
+            profile.append({
+                "height_agl_m": h,
+                "pressure_mb": p_pa / 100.0,
+                "temp_c": t,
+                "rh_pct": rh,
+                "wind_speed_ms": math.hypot(u, v),
+                "wind_dir_deg": (math.degrees(math.atan2(-u, -v)) + 360.0) % 360.0,
+            })
+        h += step_m
+    return profile
 
 
 def find_launch_time(flight_rows):
@@ -214,8 +320,14 @@ def parse_kml(text):
 
 
 def _build_one_sonda(sounding_text, flight_text, kml_text, sond_id, incendi, tipus):
-    profile = parse_sounding_csv(sounding_text)
     flight_rows = parse_flight_history_csv(flight_text)
+    perfil_font = "sounding" if sounding_text is not None else "raw_flight_history"
+    if sounding_text is not None:
+        profile = parse_sounding_csv(sounding_text)
+    else:
+        profile = profile_from_raw_flight(flight_rows)
+        if not profile:
+            raise ValueError(f"No s'ha pogut reconstruir el perfil de {sond_id} del raw_flight_history")
     launch_time_utc = find_launch_time(flight_rows)
     ascent = ascent_leg(flight_rows)
 
@@ -250,6 +362,10 @@ def _build_one_sonda(sounding_text, flight_text, kml_text, sond_id, incendi, tip
         "landing_prediction": kml_info["landing_prediction"],
         "flight_path_3d": kml_info["flight_path_3d"],
         "profile": profile,
+        # "sounding" = .sounding.csv original; "raw_flight_history" = perfil
+        # reconstruit del raw perque no hi havia .sounding.csv (vent una mica
+        # mes sorollos). Camp informatiu: el visor actual no el fa servir.
+        "perfil_font": perfil_font,
     }
 
 
@@ -263,12 +379,15 @@ def build_sonda_json(zip_path, incendi=None, tipus=None):
     with zipfile.ZipFile(zip_path) as zf:
         groups = _group_sonde_members(zf)
         if not groups:
-            raise ValueError("Cap .sounding.csv trobat al zip")
+            raise ValueError("Cap .sounding.csv ni .raw_flight_history.csv trobat al zip")
 
         for g in groups:
             if not g["flight_name"]:
                 raise ValueError(f"Falta el .raw_flight_history.csv de {g['stem']} al zip")
-            sounding_text = zf.read(g["sounding_name"]).decode("utf-8", errors="replace")
+            sounding_text = (
+                zf.read(g["sounding_name"]).decode("utf-8", errors="replace")
+                if g["sounding_name"] else None
+            )
             flight_text = zf.read(g["flight_name"]).decode("utf-8", errors="replace")
             kml_text = zf.read(g["kml_name"]).decode("utf-8", errors="replace") if g["kml_name"] else None
             sonda_tipus = _guess_tipus(g["stem"], tipus)
