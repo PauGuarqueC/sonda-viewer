@@ -230,6 +230,21 @@ def profile_from_raw_flight(flight_rows, step_m=20.0, half_window_m=10.0, max_ga
     return profile
 
 
+def launch_from_raw_flight(flight_rows):
+    """Punt de llancament a partir de la primera fila del raw amb lat/lon
+    (normalment la primera, abans de pujar). Nomes accepta graus decimals
+    valids (|lat| <= 90, |lon| <= 180); si les coordenades vinguessin en un
+    altre format (p.ex. UTM) torna None en lloc d'inventar-se una posicio."""
+    for r in flight_rows:
+        lat, lon = r["lat"], r["lon"]
+        if lat is None or lon is None:
+            continue
+        if abs(lat) > 90 or abs(lon) > 180:
+            return None
+        return {"name": "Launch (raw_flight_history)", "lon": lon, "lat": lat, "alt_msl_m": r["alt_msl_m"]}
+    return None
+
+
 def find_launch_time(flight_rows):
     """Primera fila amb dades meteo reals (temp i RH no buides) -> hora de llancament real,
     en comptes de l'hora del nom de fitxer (que es quan es reconnecta amb el receptor)."""
@@ -345,6 +360,11 @@ def _build_one_sonda(sounding_text, flight_text, kml_text, sond_id, incendi, tip
     kml_info = parse_kml(kml_text) if kml_text else {
         "launch": None, "flight_path_3d": [], "peak": None, "landing_prediction": None
     }
+    # Sense punt de llancament al KML (o sense KML): el visor el necessita per
+    # demanar els perfils de model, aixi que es treu de la primera fila del raw
+    # que tingui coordenades.
+    if kml_info["launch"] is None:
+        kml_info["launch"] = launch_from_raw_flight(flight_rows)
 
     peak_agl = None
     valid_agls = [r["alt_agl_m"] for r in flight_rows if r["alt_agl_m"] is not None]
