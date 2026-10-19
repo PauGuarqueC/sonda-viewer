@@ -69,12 +69,34 @@ def write_encrypted_json(path, obj):
     path.write_text(ciphertext, encoding="utf-8")
 
 
-def already_processed(slug, sond_id):
+def existing_sonda(slug, sond_id):
+    """La sonda ja desada a les dades de l'incendi, o None si encara no hi és."""
     path = DATA_DIR / f"{slug}.json.enc"
     data = read_encrypted_json(path, None)
     if data is None:
-        return False
-    return any(s["sond_id"] == sond_id for s in data.get("sondes", []))
+        return None
+    return next((s for s in data.get("sondes", []) if s["sond_id"] == sond_id), None)
+
+
+def already_processed(slug, sond_id):
+    return existing_sonda(slug, sond_id) is not None
+
+
+def needs_launch_refresh(old, new):
+    """Una sonda desada sense punt de llancament (KML sense 'Launch') que ara
+    en te (es treu del raw_flight_history) s'actualitza en lloc de saltar-la:
+    sense launch el visor no pot demanar els perfils de model."""
+    return old.get("launch") is None and new.get("launch") is not None
+
+
+def carry_over_user_edits(old, new):
+    """Conserva el que s'hagi editat a mà des de la pàgina (tipus i
+    correccions manuals d'ABLh/LCL/top) en tornar a processar la sonda."""
+    new["tipus"] = old.get("tipus", new.get("tipus"))
+    for k, v in old.items():
+        if k.startswith("manual_"):
+            new[k] = v
+    return new
 
 
 def was_deleted_by_user(slug, sond_id, batch_id):
@@ -218,8 +240,15 @@ def main():
             if was_deleted_by_user(slug, sond_id, batch_id):
                 print(f"[debug] {sond_id} esborrada manualment des de la pàgina, l'ignoro")
                 continue
-            if already_processed(slug, sond_id):
-                print(f"[debug] {sond_id} ja processat anteriorment, l'ignoro")
+            old = existing_sonda(slug, sond_id)
+            if old is not None:
+                if needs_launch_refresh(old, sonda_data):
+                    sonda_data = carry_over_user_edits(old, sonda_data)
+                    incendi_data = update_incendi(slug, incendi_nom, sonda_data)
+                    processed += 1
+                    print(f"[ok] {incendi_nom} / {sond_id} actualitzada: afegit el punt de llançament que faltava")
+                else:
+                    print(f"[debug] {sond_id} ja processat anteriorment, l'ignoro")
                 continue
             incendi_data = update_incendi(slug, incendi_nom, sonda_data)
             processed += 1
