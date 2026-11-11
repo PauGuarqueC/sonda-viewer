@@ -3792,11 +3792,22 @@ document.getElementById('perimeterFile').addEventListener('change', async (e) =>
   }
 });
 
-function downloadChartsImage(){
+function downloadChartsImageInner(){
   const ids = ['chartTheta', 'chartRh', 'chartWind', 'chartRise'];
   const canvases = ids.map(id => document.getElementById(id));
-  const gap = 24;
-  const w = canvases.reduce((sum, c) => sum + c.width, 0) + gap * (canvases.length - 1);
+  const gap = 6;
+  const chartList = [charts.theta, charts.rh, charts.wind, charts.rise];
+  // Retalla el marge buit de cada canvas (esquerra als panells sense eix Y, i dreta)
+  // perque la imatge quedi mes estreta; el 1r panell conserva l'eix Y complet.
+  const crops = canvases.map((c, k) => {
+    const ch = chartList[k];
+    if(!ch || !ch.chartArea) return { sx: 0, sw: c.width };
+    const sc = c.width / (ch.width || c.width);
+    const sx = k === 0 ? 0 : Math.max(0, Math.floor((ch.chartArea.left - 14) * sc));
+    const ex = Math.min(c.width, Math.ceil((ch.chartArea.right + 18) * sc));
+    return { sx, sw: ex - sx };
+  });
+  const w = crops.reduce((sum, cr) => sum + cr.sw, 0) + gap * (canvases.length - 1);
   const chartsH = Math.max(...canvases.map(c => c.height));
 
   // Elements de la llegenda: sondes (amb el seu estil de linia), perfils de
@@ -3824,7 +3835,6 @@ function downloadChartsImage(){
   });
   if(cur.length) rows.push({ list: cur, width: curW });
   const panelTitles = [t('chart.dlPanelTheta'), t('chart.dlPanelRh'), t('chart.dlPanelWind'), t('chart.dlPanelRise')];
-  const chartList = [charts.theta, charts.rh, charts.wind, charts.rise];
   const panelTop = 44; // espai per al titol general i el titol de cada panell
   const h = panelTop + chartsH + 8 + rows.length * rowH + 6;
   const out = document.createElement('canvas');
@@ -3842,13 +3852,14 @@ function downloadChartsImage(){
   let x = 0;
   const areas = [];
   canvases.forEach((c, k) => {
-    ctx.drawImage(c, x, panelTop);
+    const cr = crops[k];
+    ctx.drawImage(c, cr.sx, 0, cr.sw, c.height, x, panelTop, cr.sw, c.height);
     const ch = chartList[k];
     if(ch && ch.chartArea){
       // chartArea esta en px CSS; el canvas pot tenir un altre factor de pixel
       const sc = c.width / (ch.width || c.width);
       const A = ch.chartArea;
-      const L = x + A.left * sc, R = x + A.right * sc, T = panelTop + A.top * sc, B = panelTop + A.bottom * sc;
+      const L = x + A.left * sc - cr.sx, R = x + A.right * sc - cr.sx, T = panelTop + A.top * sc, B = panelTop + A.bottom * sc;
       areas.push({ L, R, T, B });
       // marc de l'area de dades i titol del panell
       ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = 1; ctx.setLineDash([]);
@@ -3858,7 +3869,7 @@ function downloadChartsImage(){
     } else {
       areas.push(null);
     }
-    x += c.width + gap;
+    x += cr.sw + gap;
   });
 
   // Llegenda SOTA els grafics, centrada, amb mostra de linia (continua/discontinua)
@@ -3884,6 +3895,21 @@ function downloadChartsImage(){
   link.href = out.toDataURL('image/png');
   link.click();
 }
+// Imatge descarregada: els 4 panells amb la mateixa amplada d'area de dades
+// (mes estrets que a la pagina). Es redimensionen els grafics un moment,
+// es dibuixa la imatge i es torna a la mida normal.
+function downloadChartsImage(){
+  const PLOT_W = 190; // px CSS de l'area de dades de cada panell
+  const list = [charts.theta, charts.rh, charts.wind, charts.rise].filter(ch => ch && ch.chartArea);
+  const margins = list.map(ch => ({ ch, h: ch.height, l: ch.chartArea.left, r: ch.width - ch.chartArea.right }));
+  try{
+    margins.forEach(m => { m.ch.stop(); m.ch.resize(Math.round(PLOT_W + m.l + m.r), m.h); });
+    downloadChartsImageInner();
+  } finally {
+    margins.forEach(m => { try{ m.ch.resize(); }catch(e){} });
+  }
+}
+
 document.getElementById('downloadChartsBtn').addEventListener('click', downloadChartsImage);
 
 function downloadSkewTImage(){
