@@ -1386,6 +1386,7 @@ async function loadModelProfile(modelParam){
 
   setModelStatus(modelParam, t('model.loading'));
   let lastErr = null;
+  const hostErrs = [];
   for(const host of hosts){
     try{
       const { profile, targetHour } = await queryModelHost(host, modelParam, ref, roundedDt, dateStr);
@@ -1401,13 +1402,23 @@ async function loadModelProfile(modelParam){
       return;
     } catch(err){
       lastErr = err;
+      hostErrs.push({ host, msg: (err && err.message) || String(err) });
+      console.warn('[model]', modelParam, host, err);
     }
   }
   delete modelDataMap[modelParam];
-  if(lastErr && /out of allowed range/i.test(lastErr.message || '')){
+  // Es mostra l'error REAL: abans nomes es mirava l'ultim host (la previsio en
+  // viu, que només cobreix ~92 dies enrere) i amagava el motiu pel qual
+  // l'arxiu historic havia fallat. Nomes si TOTS dos diuen "fora de rang" es
+  // mostra el missatge generic.
+  const isRange = e => /out of allowed range/i.test(e.msg);
+  if(hostErrs.length && hostErrs.every(isRange)){
     setModelStatus(modelParam, t('model.outOfRange'));
   } else {
-    setModelStatus(modelParam, t('model.errorPrefix', { msg: lastErr ? lastErr.message : t('model.errorUnknown') }));
+    const detail = hostErrs
+      .map(e => `${e.host.includes('historical') ? 'arxiu' : 'previsió'}: ${e.msg}`)
+      .join(' | ');
+    setModelStatus(modelParam, t('model.errorPrefix', { msg: detail || t('model.errorUnknown') }));
   }
   renderAllCharts();
 }
@@ -2739,16 +2750,36 @@ const windBarbsPlugin = {
     if(!opts) return;
     const { sondes, arrowXValue, pxSpacing } = opts;
     const xScale = chart.scales.x, yScale = chart.scales.y;
-    const xPixCenter = xScale.getPixelForValue(arrowXValue);
+    const nCols = sondes.length, stepX = nCols > 3 ? 11 : 16;
+    // columna de barbes: sempre dins l'area (si hi ha moltes columnes s'enretira cap a l'esquerra)
+    const xPixCenter = Math.min(xScale.getPixelForValue(arrowXValue), xScale.right - 12 - (nCols - 1) / 2 * stepX);
     const yTop = yScale.getPixelForValue(yScale.max);
     const yBottom = yScale.getPixelForValue(yScale.min);
     const n = sondes.length;
     const tol = Math.abs(yScale.getValueForPixel(yTop) - yScale.getValueForPixel(yTop + pxSpacing)) * 0.5;
 
-    sondes.forEach(({s, color}, idx) => {
-      const xOff = n > 1 ? (idx - (n-1)/2) * 16 : 0;
+    sondes.forEach(({s, color, interp}, idx) => {
+      const xOff = n > 1 ? (idx - (n-1)/2) * (n > 3 ? 11 : 16) : 0;
+      // Perfils de model: pocs nivells -> interpola vent (components u,v) entre nivells
+      const lv = interp ? s.profile
+        .filter(p => p.wind_dir_deg != null && p.wind_speed_ms != null && p.alt_msl_m != null)
+        .sort((a, b) => a.alt_msl_m - b.alt_msl_m) : null;
       for(let yPix = yTop; yPix <= yBottom; yPix += pxSpacing){
         const hVal = yScale.getValueForPixel(yPix);
+        if(lv){
+          if(!lv.length || hVal < lv[0].alt_msl_m || hVal > lv[lv.length - 1].alt_msl_m) continue;
+          let k = 0;
+          while(k < lv.length - 2 && lv[k + 1].alt_msl_m < hVal) k++;
+          const a = lv[k], bb = lv[Math.min(k + 1, lv.length - 1)];
+          const f = bb.alt_msl_m === a.alt_msl_m ? 0 : (hVal - a.alt_msl_m) / (bb.alt_msl_m - a.alt_msl_m);
+          const ua = -a.wind_speed_ms * Math.sin(a.wind_dir_deg * Math.PI / 180), va = -a.wind_speed_ms * Math.cos(a.wind_dir_deg * Math.PI / 180);
+          const ub = -bb.wind_speed_ms * Math.sin(bb.wind_dir_deg * Math.PI / 180), vb = -bb.wind_speed_ms * Math.cos(bb.wind_dir_deg * Math.PI / 180);
+          const u = ua + (ub - ua) * f, v = va + (vb - va) * f;
+          const spd = Math.hypot(u, v);
+          const dir = ((Math.atan2(-u, -v) * 180 / Math.PI) + 360) % 360;
+          drawWindBarb(chart.ctx, xPixCenter + xOff, yPix, spd, dir, color);
+          continue;
+        }
         let nearest = null, nearestDist = Infinity;
         for(const p of s.profile){
           if(p.wind_dir_deg == null || p.wind_speed_ms == null) continue;
@@ -2800,7 +2831,16 @@ function makeWindChart(extraTopPadding, opts){
     options:{
       responsive:true, maintainAspectRatio:false, interaction:{ mode:'nearest', intersect:false },
       layout: { padding: { top: extraTopPadding || 0, right: overlays ? 34 : 6 } },
-      windBarbs: { sondes, arrowXValue: arrowX, pxSpacing: 9 },
+      windBarbs: {
+        // sondes + perfils de model actius (aquests amb interpolacio: tenen pocs nivells)
+        sondes: [
+          ...sondes,
+          ...Object.values(modelDataMap)
+            .filter(md => md.profile && md.profile.some(p => p.wind_dir_deg != null && p.wind_speed_ms != null))
+            .map(md => ({ s: { profile: md.profile }, color: md.color, interp: true }))
+        ],
+        arrowXValue: arrowX, pxSpacing: 9
+      },
       scales:{
         x:{ type:'linear', min:xMin, max:xMax, title:{display:true, text:'m/s', color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', font:{family:'Roboto Mono', size:10}, count:5, autoSkip:false}, grid:{color:'#e5e5e5'} },
         y:{ type:'linear', min:yMin, max:yMax, title:{display: showYAxis, text:t('chart.heightAxis'), color:'#5a5a5a', font:{family:'Roboto Mono', size:11}}, ticks:{color:'#5a5a5a', display: showYAxis, font:{family:'Roboto Mono', size:10}}, grid:{color:'#e5e5e5'} }
