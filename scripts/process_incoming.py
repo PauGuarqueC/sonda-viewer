@@ -99,7 +99,7 @@ def carry_over_user_edits(old, new):
     return new
 
 
-def was_deleted_by_user(slug, sond_id, batch_id):
+def was_deleted_by_user(slug, sond_id, batch_id, pujat_el=None):
     """True si la sonda va ser esborrada des de la pàgina (el worker l'apunta a
     `sondes_ignorades` dins les dades de l'incendi).
 
@@ -114,7 +114,15 @@ def was_deleted_by_user(slug, sond_id, batch_id):
     data = read_encrypted_json(DATA_DIR / f"{slug}.json.enc", None)
     if data is None:
         return False
-    return sond_id in data.get("sondes_ignorades", [])
+    if sond_id not in data.get("sondes_ignorades", []):
+        return False
+    # Pujada NOVA després d'esborrar-la: el worker anota `pujat_el` al .meta
+    # (els zips antics, residus d'abans de l'esborrat, no el porten). Si la
+    # data d'esborrat no consta, qualsevol zip amb `pujat_el` és posterior.
+    eliminada_el = data.get("sondes_ignorades_t", {}).get(sond_id)
+    if pujat_el and (not eliminada_el or pujat_el > eliminada_el):
+        return False
+    return True
 
 
 def update_incendi(slug, incendi_nom, sonda_data):
@@ -122,6 +130,10 @@ def update_incendi(slug, incendi_nom, sonda_data):
     data = read_encrypted_json(path, {"incendi": incendi_nom, "sondes": []})
     data["sondes"] = [s for s in data["sondes"] if s["sond_id"] != sonda_data["sond_id"]]
     data["sondes"].append(sonda_data)
+    # si s'havia esborrat abans i ara es torna a pujar, ja no s'ignora
+    sid = sonda_data["sond_id"]
+    data["sondes_ignorades"] = [x for x in data.get("sondes_ignorades", []) if x != sid]
+    data.get("sondes_ignorades_t", {}).pop(sid, None)
     write_encrypted_json(path, data)
     return data
 
@@ -220,6 +232,7 @@ def main():
 
         incendi_nom = meta.get("incendi", slug)
         tipus = meta.get("tipus")
+        pujat_el = meta.get("pujat_el")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_zip_path = Path(tmp_dir) / f"{batch_id}.zip"
@@ -237,7 +250,7 @@ def main():
         incendi_data = None
         for sonda_data in sonda_list:
             sond_id = sonda_data["sond_id"]
-            if was_deleted_by_user(slug, sond_id, batch_id):
+            if was_deleted_by_user(slug, sond_id, batch_id, pujat_el):
                 print(f"[debug] {sond_id} esborrada manualment des de la pàgina, l'ignoro")
                 continue
             old = existing_sonda(slug, sond_id)
