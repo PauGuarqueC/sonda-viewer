@@ -660,7 +660,10 @@ const I18N = {
     'upload.notDoneYet': 'Encara no s\'ha completat el processament (pot trigar una mica més amb moltes sondes de cop). Comprova-ho a {url}, o ',
     'upload.goToFireNow': 'ves a l\'incendi ara mateix',
     'chart.downloadTitleProfile': 'Incendi {name} — perfil vertical',
-    'chart.downloadRefRise': 'Ascens de referència (2 m/s)',
+    'chart.dlPanelTheta': 'θv (K)',
+    'chart.dlPanelRh': 'HR (%)',
+    'chart.dlPanelWind': 'Vent (m/s)',
+    'chart.dlPanelRise': 'Velocitat d\'ascens (m/s)',
     'chart.downloadTitleSkewt': 'Incendi {name} — Skew-T',
   },
   en: {
@@ -837,7 +840,10 @@ const I18N = {
     'upload.notDoneYet': 'Processing has not finished yet (it can take a bit longer with many sondes at once). Check at {url}, or ',
     'upload.goToFireNow': 'go to the wildfire right now',
     'chart.downloadTitleProfile': 'Wildfire {name} — vertical profile',
-    'chart.downloadRefRise': 'Reference ascent rate (2 m/s)',
+    'chart.dlPanelTheta': 'θv (K)',
+    'chart.dlPanelRh': 'RH (%)',
+    'chart.dlPanelWind': 'Wind (m/s)',
+    'chart.dlPanelRise': 'Rise speed (m/s)',
     'chart.downloadTitleSkewt': 'Wildfire {name} — Skew-T',
   }
 };
@@ -3789,7 +3795,7 @@ document.getElementById('perimeterFile').addEventListener('change', async (e) =>
 function downloadChartsImage(){
   const ids = ['chartTheta', 'chartRh', 'chartWind', 'chartRise'];
   const canvases = ids.map(id => document.getElementById(id));
-  const gap = 24, topMargin = 30, rowH = 22;
+  const gap = 24;
   const w = canvases.reduce((sum, c) => sum + c.width, 0) + gap * (canvases.length - 1);
   const chartsH = Math.max(...canvases.map(c => c.height));
 
@@ -3803,15 +3809,11 @@ function downloadChartsImage(){
   Object.values(modelDataMap).forEach(md => {
     if(md.profile && md.profile.length) items.push({ color: md.color, dash: [4, 3], label: md.label });
   });
-  if(canvases[3] && charts.rise){
-    items.push({ color: '#999', dash: [4, 3], label: t('chart.downloadRefRise') });
-  }
 
   const mctx = document.createElement('canvas').getContext('2d');
   mctx.font = LEG_FONT;
-  const swW = 26, swGap = 6, itemGap = 26;
+  const swW = 26, swGap = 6, itemGap = 26, rowH = 22;
   const widths = items.map(it => swW + swGap + mctx.measureText(it.label).width);
-  // reparteix en files si no hi caben en una
   const rows = [];
   let cur = [], curW = 0;
   items.forEach((it, i) => {
@@ -3821,30 +3823,48 @@ function downloadChartsImage(){
     cur.push(i);
   });
   if(cur.length) rows.push({ list: cur, width: curW });
-
-  const h = topMargin + chartsH + 12 + rows.length * rowH + 8;
+  const panelTitles = [t('chart.dlPanelTheta'), t('chart.dlPanelRh'), t('chart.dlPanelWind'), t('chart.dlPanelRise')];
+  const chartList = [charts.theta, charts.rh, charts.wind, charts.rise];
+  const panelTop = 44; // espai per al titol general i el titol de cada panell
+  const h = panelTop + chartsH + 8 + rows.length * rowH + 6;
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
   const ctx = out.getContext('2d');
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, w, h);
 
+  // Titol general, centrat
   ctx.fillStyle = '#2b2b2b';
-  ctx.font = '16px sans-serif';
-  ctx.textAlign = 'left';
-  const title = t('chart.downloadTitleProfile', { name: INCENDI.incendi || '' });
-  ctx.fillText(title, 6, 22);
+  ctx.font = '15px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(t('chart.downloadTitleProfile', { name: INCENDI.incendi || '' }), w / 2, 20);
 
   let x = 0;
-  canvases.forEach(c => {
-    ctx.drawImage(c, x, topMargin);
+  const areas = [];
+  canvases.forEach((c, k) => {
+    ctx.drawImage(c, x, panelTop);
+    const ch = chartList[k];
+    if(ch && ch.chartArea){
+      // chartArea esta en px CSS; el canvas pot tenir un altre factor de pixel
+      const sc = c.width / (ch.width || c.width);
+      const A = ch.chartArea;
+      const L = x + A.left * sc, R = x + A.right * sc, T = panelTop + A.top * sc, B = panelTop + A.bottom * sc;
+      areas.push({ L, R, T, B });
+      // marc de l'area de dades i titol del panell
+      ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = 1; ctx.setLineDash([]);
+      ctx.strokeRect(L, T, R - L, B - T);
+      ctx.fillStyle = '#2b2b2b'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(panelTitles[k], (L + R) / 2, T - 8);
+    } else {
+      areas.push(null);
+    }
     x += c.width + gap;
   });
 
   // Llegenda SOTA els grafics, centrada, amb mostra de linia (continua/discontinua)
-  ctx.font = LEG_FONT;
+  ctx.font = LEG_FONT; ctx.textAlign = 'left';
   rows.forEach((row, r) => {
-    const y = topMargin + chartsH + 12 + r * rowH + 12;
+    const y = panelTop + chartsH + 8 + r * rowH + 12;
     let lx = (w - row.width) / 2;
     row.list.forEach(i => {
       const it = items[i];
