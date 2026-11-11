@@ -660,6 +660,7 @@ const I18N = {
     'upload.notDoneYet': 'Encara no s\'ha completat el processament (pot trigar una mica més amb moltes sondes de cop). Comprova-ho a {url}, o ',
     'upload.goToFireNow': 'ves a l\'incendi ara mateix',
     'chart.downloadTitleProfile': 'Incendi {name} — perfil vertical',
+    'chart.downloadRefRise': 'Ascens de referència (2 m/s)',
     'chart.downloadTitleSkewt': 'Incendi {name} — Skew-T',
   },
   en: {
@@ -836,6 +837,7 @@ const I18N = {
     'upload.notDoneYet': 'Processing has not finished yet (it can take a bit longer with many sondes at once). Check at {url}, or ',
     'upload.goToFireNow': 'go to the wildfire right now',
     'chart.downloadTitleProfile': 'Wildfire {name} — vertical profile',
+    'chart.downloadRefRise': 'Reference ascent rate (2 m/s)',
     'chart.downloadTitleSkewt': 'Wildfire {name} — Skew-T',
   }
 };
@@ -2624,8 +2626,10 @@ function verticalRefLinePlugin(xValue, label, color){
         ctx.setLineDash([]);
         ctx.fillStyle = color || '#999';
         ctx.font = '10px "Roboto Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, xPix, yScale.top - 4);
+        // dins l'area del grafic (a dalt a la dreta de la linia): abans anava
+        // per sobre de yScale.top i el marge superior petit el retallava
+        ctx.textAlign = 'left';
+        ctx.fillText(label, xPix + 4, yScale.top + 11);
       }
       ctx.restore();
     }
@@ -3785,11 +3789,40 @@ document.getElementById('perimeterFile').addEventListener('change', async (e) =>
 function downloadChartsImage(){
   const ids = ['chartTheta', 'chartRh', 'chartWind', 'chartRise'];
   const canvases = ids.map(id => document.getElementById(id));
-  const gap = 24, topMargin = 30, legendRowH = 26;
+  const gap = 24, topMargin = 30, rowH = 22;
   const w = canvases.reduce((sum, c) => sum + c.width, 0) + gap * (canvases.length - 1);
   const chartsH = Math.max(...canvases.map(c => c.height));
-  const h = topMargin + chartsH + legendRowH;
 
+  // Elements de la llegenda: sondes (amb el seu estil de linia), perfils de
+  // model actius (discontinus, color propi) i la linia de referencia dels 2 m/s
+  const LEG_FONT = '12px sans-serif';
+  const items = activeSondes().map(({s, color, dash}) => ({
+    color, dash: dash || [],
+    label: t('skewt.legendLabel', { tipus: sondaTipeDisplay(s.tipus), label: sondaLabel(s.sond_id) })
+  }));
+  Object.values(modelDataMap).forEach(md => {
+    if(md.profile && md.profile.length) items.push({ color: md.color, dash: [4, 3], label: md.label });
+  });
+  if(canvases[3] && charts.rise){
+    items.push({ color: '#999', dash: [4, 3], label: t('chart.downloadRefRise') });
+  }
+
+  const mctx = document.createElement('canvas').getContext('2d');
+  mctx.font = LEG_FONT;
+  const swW = 26, swGap = 6, itemGap = 26;
+  const widths = items.map(it => swW + swGap + mctx.measureText(it.label).width);
+  // reparteix en files si no hi caben en una
+  const rows = [];
+  let cur = [], curW = 0;
+  items.forEach((it, i) => {
+    const add = widths[i] + (cur.length ? itemGap : 0);
+    if(cur.length && curW + add > w - 24){ rows.push({ list: cur, width: curW }); cur = []; curW = 0; }
+    curW += widths[i] + (cur.length ? itemGap : 0);
+    cur.push(i);
+  });
+  if(cur.length) rows.push({ list: cur, width: curW });
+
+  const h = topMargin + chartsH + 12 + rows.length * rowH + 8;
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
   const ctx = out.getContext('2d');
@@ -3798,6 +3831,7 @@ function downloadChartsImage(){
 
   ctx.fillStyle = '#2b2b2b';
   ctx.font = '16px sans-serif';
+  ctx.textAlign = 'left';
   const title = t('chart.downloadTitleProfile', { name: INCENDI.incendi || '' });
   ctx.fillText(title, 6, 22);
 
@@ -3807,25 +3841,21 @@ function downloadChartsImage(){
     x += c.width + gap;
   });
 
-  // Llegenda SOTA els gràfics (sota els titols dels eixos X), centrada, nomes sondes actives
-  const swatchSize = 11;
-  const legendY = topMargin + chartsH + 18;
-  const itemGap = 22;
-  ctx.font = '12px sans-serif';
-
-  const items = activeSondes().map(({s, color}) => ({
-    color, label: t('skewt.legendLabel', { tipus: sondaTipeDisplay(s.tipus), label: sondaLabel(s.sond_id) })
-  }));
-  const widths = items.map(it => swatchSize + 6 + ctx.measureText(it.label).width);
-  const totalW = widths.reduce((a, b) => a + b, 0) + itemGap * (items.length - 1);
-
-  let lx = (w - totalW) / 2;
-  items.forEach((it, i) => {
-    ctx.fillStyle = it.color;
-    ctx.fillRect(lx, legendY - swatchSize + 2, swatchSize, swatchSize);
-    ctx.fillStyle = '#2b2b2b';
-    ctx.fillText(it.label, lx + swatchSize + 6, legendY + 2);
-    lx += widths[i] + itemGap;
+  // Llegenda SOTA els grafics, centrada, amb mostra de linia (continua/discontinua)
+  ctx.font = LEG_FONT;
+  rows.forEach((row, r) => {
+    const y = topMargin + chartsH + 12 + r * rowH + 12;
+    let lx = (w - row.width) / 2;
+    row.list.forEach(i => {
+      const it = items[i];
+      ctx.save();
+      ctx.strokeStyle = it.color; ctx.lineWidth = 2; ctx.setLineDash(it.dash);
+      ctx.beginPath(); ctx.moveTo(lx, y - 4); ctx.lineTo(lx + swW, y - 4); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#2b2b2b';
+      ctx.fillText(it.label, lx + swW + swGap, y);
+      lx += widths[i] + itemGap;
+    });
   });
 
   const link = document.createElement('a');
