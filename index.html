@@ -600,6 +600,8 @@ const I18N = {
     'model.errorUnknown': 'desconegut',
     'model.errorPrefix': 'Error: {msg}',
     'model.errorReasonUnknown': 'Error desconegut',
+    'model.beforeAvailable': 'Sense dades d\'aquest model abans del {date} (Open-Meteo). Per a incendis anteriors fes servir ERA5.',
+    'model.outOfRange': 'Open-Meteo no té dades d\'aquest model per a aquesta data. Per a incendis antics fes servir ERA5.',
     'model.noDataForHour': 'Sense dades per aquesta hora',
     'model.noLevelWithData': 'Cap nivell de pressió amb dades',
     'status.updating': 'Actualitzant... ({i}/{max})',
@@ -774,6 +776,8 @@ const I18N = {
     'model.errorUnknown': 'unknown',
     'model.errorPrefix': 'Error: {msg}',
     'model.errorReasonUnknown': 'Unknown error',
+    'model.beforeAvailable': 'No data for this model before {date} (Open-Meteo). For earlier fires use ERA5.',
+    'model.outOfRange': 'Open-Meteo has no data from this model for this date. For old fires use ERA5.',
     'model.noDataForHour': 'No data for this hour',
     'model.noLevelWithData': 'No pressure level with data',
     'status.updating': 'Updating... ({i}/{max})',
@@ -1132,9 +1136,9 @@ let modelDataMap = {}; // modelParam -> { label, profile: [...], color } | (abse
 
 const MODEL_LEVELS = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100];
 const MODEL_DEFS = [
-  { key: 'icon_eu', labelKey: 'model.icon_eu', color: '#8a8a8a' },
-  { key: 'meteofrance_arome_france', labelKey: 'model.arome', color: '#5b8c5a' },
-  { key: 'ecmwf_ifs025', labelKey: 'model.ecmwf', color: '#8e5ba0' },
+  { key: 'icon_eu', labelKey: 'model.icon_eu', color: '#8a8a8a', since: '2022-11-24' },
+  { key: 'meteofrance_arome_france', labelKey: 'model.arome', color: '#5b8c5a', since: '2024-01-02' },
+  { key: 'ecmwf_ifs025', labelKey: 'model.ecmwf', color: '#8e5ba0', since: '2024-02-03' },
   { key: 'era5', labelKey: 'model.era5', color: '#2C2C2C' },
 ];
 function modelLabel(key){
@@ -1277,6 +1281,42 @@ async function queryModelHost(host, modelParam, ref, targetDt, dateStr){
   return { profile, targetHour };
 }
 
+// Amplia els eixos X de θv i vent (només si cal) perquè hi càpiguen els
+// perfils de model actius. Només mira els punts dins de la finestra d'alçada
+// visible, i només AMPLIA: no encongeix mai un eix que l'usuari hagi fet
+// més ample a mà.
+function expandAxesForModels(){
+  const keys = Object.keys(modelDataMap);
+  if(!keys.length) return;
+  const hMin = axisMax.height.min, hMax = axisMax.height.max;
+  let tMin = Infinity, tMax = -Infinity, wMax = -Infinity;
+  keys.forEach(k => (modelDataMap[k].profile || []).forEach(p => {
+    if(p.alt_msl_m == null || p.alt_msl_m < hMin || p.alt_msl_m > hMax) return;
+    if(p.theta_v_k != null){ if(p.theta_v_k < tMin) tMin = p.theta_v_k; if(p.theta_v_k > tMax) tMax = p.theta_v_k; }
+    if(p.wind_speed_ms != null && p.wind_speed_ms > wMax) wMax = p.wind_speed_ms;
+  }));
+
+  function widen(key, minId, maxId, minValId, maxValId, newMin, newMax){
+    const minEl = document.getElementById(minId), maxEl = document.getElementById(maxId);
+    let changed = false;
+    if(newMin < axisMax[key].min){
+      axisMax[key].min = newMin;
+      if(newMin < parseFloat(minEl.min)){ minEl.min = newMin; maxEl.min = newMin; }
+      minEl.value = newMin; document.getElementById(minValId).textContent = newMin; changed = true;
+    }
+    if(newMax > axisMax[key].max){
+      axisMax[key].max = newMax;
+      if(newMax > parseFloat(maxEl.max)){ minEl.max = newMax; maxEl.max = newMax; }
+      maxEl.value = newMax; document.getElementById(maxValId).textContent = newMax; changed = true;
+    }
+    return changed;
+  }
+  if(isFinite(tMin)) widen('theta', 'sliderThetaMin', 'sliderThetaMax', 'sliderThetaMinVal', 'sliderThetaMaxVal',
+    Math.floor(tMin / 2) * 2, Math.ceil(tMax / 2) * 2);
+  if(isFinite(wMax)) widen('wind', 'sliderWindMin', 'sliderWindMax', 'sliderWindMinVal', 'sliderWindMaxVal',
+    axisMax.wind.min, Math.ceil(wMax));
+}
+
 async function loadModelProfile(modelParam){
   const ref = getModelReferenceSonde();
 
@@ -1293,6 +1333,7 @@ async function loadModelProfile(modelParam){
     // disponible per sondes prou antigues (retard tipic d'uns dies).
     if(ref.era5_profile && ref.era5_profile.length){
       modelDataMap[modelParam] = { label: modelLabel(modelParam), profile: ref.era5_profile, color: modelColor(modelParam) };
+      expandAxesForModels();
       // era5_target_hour ve del backfill ("YYYY-MM-DDTHH", mateix format que
       // el targetHour dels models en directe) -- si la sonda es va processar
       // abans d'afegir aquest camp, es mostra el text generic anterior.
@@ -1316,6 +1357,13 @@ async function loadModelProfile(modelParam){
   }
 
   const dateStr = launchDt.toISOString().slice(0, 10);
+  const modelDef = MODEL_DEFS.find(m => m.key === modelParam);
+  if(modelDef && modelDef.since && dateStr < modelDef.since){
+    delete modelDataMap[modelParam];
+    setModelStatus(modelParam, t('model.beforeAvailable', { date: modelDef.since }));
+    renderAllCharts();
+    return;
+  }
   const now = new Date();
   const daysDiff = (now - launchDt) / 86400000;
   // Nomes fem servir la previsio "en viu" per llançaments molt recents; per
@@ -1334,6 +1382,7 @@ async function loadModelProfile(modelParam){
     try{
       const { profile, targetHour } = await queryModelHost(host, modelParam, ref, roundedDt, dateStr);
       modelDataMap[modelParam] = { label: modelLabel(modelParam), profile, color: modelColor(modelParam) };
+      expandAxesForModels();
       // la data mostrada surt de targetHour (no de dateStr), perque quedi
       // ben etiquetada si l'arrodoniment ha passat al dia seguent
       setModelStatus(modelParam, t('model.dateHourUtc', {
@@ -1347,7 +1396,11 @@ async function loadModelProfile(modelParam){
     }
   }
   delete modelDataMap[modelParam];
-  setModelStatus(modelParam, t('model.errorPrefix', { msg: lastErr ? lastErr.message : t('model.errorUnknown') }));
+  if(lastErr && /out of allowed range/i.test(lastErr.message || '')){
+    setModelStatus(modelParam, t('model.outOfRange'));
+  } else {
+    setModelStatus(modelParam, t('model.errorPrefix', { msg: lastErr ? lastErr.message : t('model.errorUnknown') }));
+  }
   renderAllCharts();
 }
 
